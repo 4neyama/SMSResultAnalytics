@@ -69,6 +69,9 @@ const GATE_PASSWORD_HASH = "451a17d4e46ee9348c0ad3623bc1fc21ac29d8cc12478af20d32
 
 // ページロード時の初期化
 window.addEventListener('DOMContentLoaded', async () => {
+    // 0. タブシステムの初期設定とイベント登録
+    initTabSystem();
+
     // 1. 共通パスワード認証の確認
     const storedGateAuth = localStorage.getItem('gate_authenticated');
     if (storedGateAuth === 'true') {
@@ -749,11 +752,80 @@ function handleLogicToggle() {
     showToast("📊 集計ロジックを切り替えました。", "info");
 }
 
-// Tab切り替え
+// ==========================================================================
+// 5. タブ切り替えとナビゲーションの堅牢化リファクタリング
+// ==========================================================================
+
+// タブシステムの初期化 (イベントの一元バインド)
+function initTabSystem() {
+    const tabBtns = document.querySelectorAll('#main-tabs .tab-btn');
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabId = btn.getAttribute('data-tab');
+            if (tabId) {
+                switchTab(tabId);
+            }
+        });
+    });
+    
+    // 自己整合性診断を実行
+    validateTabElements();
+}
+
+// 自己診断テスト (ID不一致の早期検出)
+function validateTabElements() {
+    console.log("🔍 [TabSystem] 自己整合性テストを開始中...");
+    const tabBtns = document.querySelectorAll('#main-tabs .tab-btn');
+    let errorCount = 0;
+    
+    tabBtns.forEach(btn => {
+        const tabId = btn.getAttribute('data-tab');
+        if (!tabId) {
+            console.error("❌ [TabSystem Error] タブボタンに data-tab 属性がありません！", btn);
+            errorCount++;
+            return;
+        }
+        const contentEl = document.getElementById(tabId);
+        if (!contentEl) {
+            console.error(`❌ [TabSystem Error] タブボタンが指定するコンテンツID「${tabId}」に対応する .tab-content 要素がHTML内に存在しません！`);
+            errorCount++;
+        } else if (!contentEl.classList.contains('tab-content')) {
+            console.warn(`⚠️ [TabSystem Warning] 要素「${tabId}」は存在しますが、.tab-content クラスが付与されていません。`);
+        }
+    });
+    
+    if (errorCount === 0) {
+        console.log("✅ [TabSystem] 自己整合性テストをパスしました。すべてのタブIDは正常です。");
+    } else {
+        console.error(`🚨 [TabSystem] テスト失敗: ${errorCount} 件の不整合を検出しました。HTML/JS構造を確認してください。`);
+    }
+}
+
+// 堅牢化したTab切り替え
 function switchTab(tabId) {
+    const targetEl = document.getElementById(tabId);
+    if (!targetEl) {
+        console.error(`🚨 [TabSystem] 指定されたタブID「${tabId}」が存在しないため、ダッシュボードへ自動フォールバックします。`);
+        if (tabId !== 'dashboard-view') {
+            switchTab('dashboard-view');
+        }
+        return;
+    }
+    
+    // 管理者専用タブへの未ログイン状態での侵入ガード
+    const tabBtn = document.querySelector(`#main-tabs .tab-btn[data-tab="${tabId}"]`);
+    const isBtnAdminOnly = tabBtn ? tabBtn.classList.contains('admin-only') : false;
+    if (isBtnAdminOnly && !isAdmin) {
+        console.warn(`🚨 [TabSystem] 管理者未ログイン状態で専用タブ「${tabId}」への遷移を検出したため、ダッシュボードへ差し戻します。`);
+        if (tabId !== 'dashboard-view') {
+            switchTab('dashboard-view');
+        }
+        return;
+    }
+
     currentTab = tabId;
     
-    // フィルターバーの表示・非表示制御 (管理者用タブのときは不要なので非表示にする)
+    // フィルターバーの表示・非表示制御
     const filterBar = document.getElementById('global-filter-bar');
     if (filterBar) {
         if (tabId === 'dashboard-view' || tabId === 'store-view') {
@@ -763,11 +835,11 @@ function switchTab(tabId) {
         }
     }
 
-    // タブボタンのアクティブ化
+    // タブボタンのアクティブ状態の更新 (data-tab基準)
     const tabBtns = document.querySelectorAll('#main-tabs .tab-btn');
     tabBtns.forEach(btn => {
         btn.classList.remove('active');
-        if (btn.getAttribute('onclick').includes(tabId)) {
+        if (btn.getAttribute('data-tab') === tabId) {
             btn.classList.add('active');
         }
     });
@@ -777,17 +849,17 @@ function switchTab(tabId) {
     contents.forEach(content => {
         content.classList.remove('active');
     });
-    document.getElementById(tabId).classList.add('active');
+    targetEl.classList.add('active');
 
     // タブ切り替え時のデータロード・描画処理
     if (tabId === 'sms-manage-view') {
         loadStoreSmsGrid();
-        renderCampaignGrid(); // スケジュールアコーディオンも再描画
+        renderCampaignGrid();
     } else if (tabId === 'reservation-manage-view') {
-        loadReservationsList(); // 入庫明細一覧のロード
+        loadReservationsList();
     } else if (tabId === 'system-setting-view') {
-        loadStoresMaster(); // 店舗マスタのロード
-        renderMappingRules(); // カテゴリマッピングのロード
+        loadStoresMaster();
+        renderMappingRules();
     } else {
         loadAllData();
     }
@@ -3597,6 +3669,8 @@ window.deleteCampaignDeliveries = deleteCampaignDeliveries;
 
 // Vite移行に伴い、index.html側から直接呼び出される関数を window に追加で紐付け
 window.handleGateAuth = handleGateAuth;
+window.initTabSystem = initTabSystem;
+window.validateTabElements = validateTabElements;
 window.switchTab = switchTab;
 window.openSetupModal = openSetupModal;
 window.openAdminModal = openAdminModal;
