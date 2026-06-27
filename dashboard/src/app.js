@@ -1290,6 +1290,7 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
 
         const cleanRecords = [];
         let piiScannedBlocked = false;
+        const warningLogs = [];
 
         // 疑わしい電話番号やメールアドレスが残っていないか検証するための正規表現
         const phoneRegex = /0[789]0-?\d{4}-?\d{4}|0\d-?\d{4}-?\d{4}/; // 携帯・固定電話
@@ -1375,9 +1376,9 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
                     }
                 }
 
-                // マスタに合致するコードがない場合、警告をログに出力
+                // マスタに合致するコードがない場合、警告をログに蓄積
                 if (!matchedStoreCode || !storesCache.some(s => s.store_code === matchedStoreCode)) {
-                    logToConsole(`⚠️ 警告: レコード #${idx+1} の店舗名「${csvStoreName || '未指定'}」(CSVコード:「${csvStoreCode || '未指定'}」) は店舗マスタに適合しません。コード「unknown」として処理されます。`);
+                    warningLogs.push(`⚠️ 警告: レコード #${idx+1} の店舗名「${csvStoreName || '未指定'}」(CSVコード:「${csvStoreCode || '未指定'}」) は店舗マスタに適合しません。コード「unknown」として処理されます。`);
                     matchedStoreCode = "unknown";
                 }
 
@@ -1391,9 +1392,9 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
                 const csvStoreCode = (newRow["予約受付店舗ID"] || "").trim();
                 let matchedStoreCode = csvStoreCode;
 
-                // コードが直接渡されていないか、マスタに存在しない場合、'unknown' に補正する
+                // コードが直接渡されていないか、マスタに存在しない場合、'unknown' に補正して警告を蓄積
                 if (!matchedStoreCode || !storesCache.some(s => s.store_code === matchedStoreCode)) {
-                    logToConsole(`⚠️ 警告: レコード #${idx+1} の予約受付店舗ID「${csvStoreCode || '未指定'}」は店舗マスタに適合しません。コード「unknown」として処理されます。`);
+                    warningLogs.push(`⚠️ 警告: レコード #${idx+1} の予約受付店舗ID「${csvStoreCode || '未指定'}」は店舗マスタに適合しません。コード「unknown」として処理されます。`);
                     matchedStoreCode = "unknown";
                 }
 
@@ -1411,6 +1412,18 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
         });
 
         const processResults = await Promise.all(processRowPromises);
+        
+        // 💡 蓄積された警告ログをまとめて出力（大量のDOM操作によるフリーズを防止）
+        if (warningLogs.length > 0) {
+            logToConsole(`📝 店舗コード不一致の警告が ${warningLogs.length} 件発生しました。`);
+            const maxShow = 20;
+            warningLogs.slice(0, maxShow).forEach(msg => logToConsole(msg));
+            if (warningLogs.length > maxShow) {
+                logToConsole(`...（他 ${warningLogs.length - maxShow} 件の警告は省略されました。ブラウザのデベロッパーツールで確認できます）`);
+                // 開発者用にブラウザのコンソールに全件出力
+                warningLogs.slice(maxShow).forEach(msg => console.log(msg));
+            }
+        }
         
         if (piiScannedBlocked) {
             logToConsole(`🚨 アップロードを強制停止しました。個人情報は送信されていません。`);
