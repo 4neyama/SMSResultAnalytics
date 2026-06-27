@@ -1322,8 +1322,10 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
         if (type === 'haishin') {
             smsDeliveriesCache = smsDeliveriesCache.filter(d => d.campaign_id !== campaignId);
             smsDeliveriesCache.push(...validCleanRecords);
-            renderCampaignGrid();
-            loadAllData();
+            
+            // 💡 データの永続化（親子レコードの一貫性）を保証するため、CSVアップロード成功時にグリッドの変更を自動でセーブ
+            logToConsole("🔄 CSVインポート完了に伴い、グリッド設定を自動セーブしてデータベースへの永続化を確定しています...");
+            await saveCampaignGrid(true);
         } else {
             reservationsCache.push(...validCleanRecords);
             loadAllData();
@@ -2607,14 +2609,14 @@ async function deleteCampaignDeliveries(campaignId) {
     }
 }
 
-// スケジュールグリッドの一括保存
-async function saveCampaignGrid() {
+// スケジュールグリッドの一括保存 (isSilent = true の場合はUIの表示・トーストを変更せずに静かに実行)
+async function saveCampaignGrid(isSilent = false) {
     const btn = document.getElementById('save-campaign-btn');
     const originalText = btn ? btn.innerHTML : "💾 スケジュールの変更を保存";
     const originalBg = btn ? btn.style.background : "";
     
     // ボタンをローディング状態にする
-    if (btn) {
+    if (btn && !isSilent) {
         btn.disabled = true;
         btn.innerHTML = "⏳ 保存中...";
         btn.style.opacity = "0.7";
@@ -2687,7 +2689,7 @@ async function saveCampaignGrid() {
     };
 
     const restoreButton = (text, bgClassOrColor, duration) => {
-        if (btn) {
+        if (btn && !isSilent) {
             btn.innerHTML = text;
             btn.style.opacity = "1";
             btn.style.background = bgClassOrColor;
@@ -2699,6 +2701,19 @@ async function saveCampaignGrid() {
                 btn.style.background = originalBg;
                 btn.style.borderColor = "";
             }, duration);
+        } else if (isSilent) {
+            // サイレント時はボタンの見た目は変えず、状態のクリーンアップだけを実行
+            Ct = null;
+            Object.keys(accordionDraftStates).forEach(monthKey => {
+                const hasRealCampaigns = campaignsCache.some(c => 
+                    String(c.drawMonth) === String(monthKey) || (c.delivery_date && c.delivery_date.startsWith(monthKey))
+                );
+                if (hasRealCampaigns) {
+                    delete accordionDraftStates[monthKey];
+                }
+            });
+            Oc();
+            Fe();
         }
     };
 
@@ -2734,10 +2749,16 @@ async function saveCampaignGrid() {
 
         await loadInitialData(true); // 配信実績の再ロードをスキップして反映ラグによる表示消えを防止！
         finalizeSavedGridState(); // 即座に画面を実UUIDで再描画してタイムラグを解消！
-        restoreButton("✅ 保存完了！", "var(--secondary)", 1500);
+        if (!isSilent) {
+            restoreButton("✅ 保存完了！", "var(--secondary)", 1500);
+        } else {
+            restoreButton("", "", 0); // 状態のクリーンアップを実行
+        }
     } catch (err) {
         console.error(err);
-        restoreButton("❌ 保存失敗", "var(--danger)", 2000);
+        if (!isSilent) {
+            restoreButton("❌ 保存失敗", "var(--danger)", 2000);
+        }
     }
 }
 
