@@ -17,6 +17,7 @@ let storesCache = [];
 let campaignsCache = [];
 let smsDeliveriesCache = [];
 let reservationsCache = [];
+let reservationsListCache = [];
 let storeOwnSmsCache = [];
 let categoryMappingsCache = [];
 
@@ -1736,9 +1737,24 @@ async function loadReservationsList() {
         return;
     }
 
+    // ロード中表示
+    const tbody = document.getElementById('reservation-list-body');
+    if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">データを読み込んでいます...</td></tr>';
+    }
+
     try {
         logToConsole("⏳ データベースから入庫予約データを読み込み中...", "nyuko");
-        const { data, error } = await supabaseClient
+        
+        // 検索・フィルター条件の取得
+        const startMonth = document.getElementById('filter-res-start-month')?.value; // YYYY-MM
+        const endMonth = document.getElementById('filter-res-end-month')?.value;     // YYYY-MM
+        const storeCode = document.getElementById('filter-res-store')?.value;
+        const route = document.getElementById('filter-res-route')?.value;
+        const rescheduledOnly = document.getElementById('filter-res-rescheduled-only')?.checked;
+
+        // クエリの作成
+        let query = supabaseClient
             .from('reservations')
             .select(`
                 id,
@@ -1756,18 +1772,41 @@ async function loadReservationsList() {
                 stores (
                     store_name
                 )
-            `)
-            .order('updated_at', { ascending: false });
+            `);
 
+        // フィルター条件の適用
+        if (startMonth) {
+            query = query.gte('reception_date', `${startMonth}-01`);
+        }
+        if (endMonth) {
+            const parts = endMonth.split('-');
+            const nextM = parseInt(parts[1]) + 1;
+            const nextMonthStr = nextM > 12 ? `${parseInt(parts[0]) + 1}-01` : `${parts[0]}-${String(nextM).padStart(2, '0')}`;
+            query = query.lt('reception_date', `${nextMonthStr}-01`);
+        }
+        if (storeCode && storeCode !== 'all') {
+            query = query.eq('store_code', storeCode);
+        }
+        if (route && route !== 'all') {
+            query = query.eq('route', route);
+        }
+        if (rescheduledOnly) {
+            query = query.not('previous_reception_date', 'is', null);
+        }
+
+        // ソート順と件数制限 (最新1000件のみ)
+        query = query.order('updated_at', { ascending: false }).limit(1000);
+
+        const { data, error } = await query;
         if (error) throw error;
 
-        // キャッシュへ退避
-        reservationsCache = (data || []).map(item => ({
+        // グローバル全件キャッシュを破壊せず、明細専用キャッシュに退避
+        reservationsListCache = (data || []).map(item => ({
             ...item,
             store_name: item.stores ? item.stores.store_name : '不明な店舗'
         }));
 
-        logToConsole(`✅ 入庫予約データをロード完了 (${reservationsCache.length}件)`, "nyuko");
+        logToConsole(`✅ 入庫予約データをロード完了 (${reservationsListCache.length}件)`, "nyuko");
         
         // 店舗フィルターのオプションを動的に再構築
         buildReservationStoreFilter();
@@ -1966,37 +2005,42 @@ function renderReservationGrid() {
     const countSpan = document.getElementById('reservation-list-count');
     if (!tbody) return;
 
-    // 検索・フィルター条件の取得
-    const startMonth = document.getElementById('filter-res-start-month')?.value; // YYYY-MM
-    const endMonth = document.getElementById('filter-res-end-month')?.value;     // YYYY-MM
-    const storeCode = document.getElementById('filter-res-store')?.value;
-    const route = document.getElementById('filter-res-route')?.value;
-    const rescheduledOnly = document.getElementById('filter-res-rescheduled-only')?.checked;
+    let displayData = [];
+    if (supabaseClient) {
+        // オンライン時は、すでにAPIクエリ側で絞り込まれた reservationsListCache を使用
+        displayData = [...reservationsListCache];
+    } else {
+        // オフライン（デモモード）時は、全件が入っている reservationsCache から絞り込む
+        const startMonth = document.getElementById('filter-res-start-month')?.value;
+        const endMonth = document.getElementById('filter-res-end-month')?.value;
+        const storeCode = document.getElementById('filter-res-store')?.value;
+        const route = document.getElementById('filter-res-route')?.value;
+        const rescheduledOnly = document.getElementById('filter-res-rescheduled-only')?.checked;
 
-    // 絞り込み処理
-    let filtered = [...reservationsCache];
+        displayData = [...reservationsCache];
 
-    if (startMonth) {
-        filtered = filtered.filter(r => r.reception_date >= `${startMonth}-01`);
-    }
-    if (endMonth) {
-        const parts = endMonth.split('-');
-        const nextM = parseInt(parts[1]) + 1;
-        const nextMonthStr = nextM > 12 ? `${parseInt(parts[0]) + 1}-01` : `${parts[0]}-${String(nextM).padStart(2, '0')}`;
-        filtered = filtered.filter(r => r.reception_date < `${nextMonthStr}-01`);
-    }
-    if (storeCode && storeCode !== 'all') {
-        filtered = filtered.filter(r => r.store_code === storeCode);
-    }
-    if (route && route !== 'all') {
-        filtered = filtered.filter(r => r.route === route);
-    }
-    if (rescheduledOnly) {
-        filtered = filtered.filter(r => r.previous_reception_date !== null && r.previous_reception_date !== undefined);
+        if (startMonth) {
+            displayData = displayData.filter(r => r.reception_date >= `${startMonth}-01`);
+        }
+        if (endMonth) {
+            const parts = endMonth.split('-');
+            const nextM = parseInt(parts[1]) + 1;
+            const nextMonthStr = nextM > 12 ? `${parseInt(parts[0]) + 1}-01` : `${parts[0]}-${String(nextM).padStart(2, '0')}`;
+            displayData = displayData.filter(r => r.reception_date < `${nextMonthStr}-01`);
+        }
+        if (storeCode && storeCode !== 'all') {
+            displayData = displayData.filter(r => r.store_code === storeCode);
+        }
+        if (route && route !== 'all') {
+            displayData = displayData.filter(r => r.route === route);
+        }
+        if (rescheduledOnly) {
+            displayData = displayData.filter(r => r.previous_reception_date !== null && r.previous_reception_date !== undefined);
+        }
     }
 
     // テーブル描画
-    if (filtered.length === 0) {
+    if (displayData.length === 0) {
         tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">該当する入庫データが見つかりません。</td></tr>';
         if (countSpan) countSpan.textContent = "表示件数: 0 件";
         return;
@@ -3864,6 +3908,8 @@ window.__appDebug = {
     set storesCache(val) { storesCache = val; },
     get reservationsCache() { return reservationsCache; },
     set reservationsCache(val) { reservationsCache = val; },
+    get reservationsListCache() { return reservationsListCache; },
+    set reservationsListCache(val) { reservationsListCache = val; },
     renderCampaignGrid: renderCampaignGrid,
     deleteCampaignDeliveries: deleteCampaignDeliveries,
     processGridFile: processGridFile,
