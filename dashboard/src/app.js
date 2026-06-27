@@ -1145,15 +1145,17 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
     try {
         logToConsole("🧹 個人情報（PII）列のドロップおよびハッシュ化（並行処理）を開始...");
 
-        // 削除対象列の定義
+        // 削除対象列の定義 (平文で個人情報が混入するリスクの高い項目およびフリーテキスト欄)
         const columnsToRemoveHaishin = [
             "携帯電話番号", "自宅電話番号", "顧客名", "フリガナ",
             "ナンバー（陸事）", "ナンバー（種別）", "ナンバー（かな）", "ナンバー（車番）",
-            "email", "住所", "郵便番号", "担当者"
+            "email", "住所", "郵便番号", "担当者",
+            "コメント", "備考", "メモ", "連絡事項", "備考欄", "その他"
         ];
         const columnsToRemoveNyuko = [
             "お客様名", "ふりがな", "連絡先電話番号（自宅）", "連絡先電話番号（携帯）",
-            "メールアドレス"
+            "メールアドレス",
+            "コメント", "備考", "メモ", "連絡事項", "備考欄", "その他", "予約時コメント", "受付時コメント"
         ];
 
         const targetRemoveCols = type === 'haishin' ? columnsToRemoveHaishin : columnsToRemoveNyuko;
