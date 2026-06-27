@@ -2612,7 +2612,7 @@ async function deleteCampaignDeliveries(campaignId) {
 // スケジュールグリッドの一括保存 (isSilent = true の場合はUIの表示・トーストを変更せずに静かに実行)
 async function saveCampaignGrid(isSilent = false) {
     const btn = document.getElementById('save-campaign-btn');
-    const originalText = btn ? btn.innerHTML : "💾 スケジュールの変更を保存";
+    const originalText = btn ? btn.innerHTML : "💾 編集内容を保存";
     const originalBg = btn ? btn.style.background : "";
     
     // ボタンをローディング状態にする
