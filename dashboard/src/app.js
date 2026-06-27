@@ -1732,6 +1732,7 @@ async function loadReservationsList() {
     if (!supabaseClient) {
         logToConsole("⚠️ Supabase未接続のため、デモ用入庫データを使用します。", "nyuko");
         renderReservationGrid();
+        await updateMonthlySummary();
         return;
     }
 
@@ -1773,11 +1774,163 @@ async function loadReservationsList() {
         
         // 描画実行
         renderReservationGrid();
+
+        // 月別サマリーも更新
+        await updateMonthlySummary();
     } catch (err) {
         console.error(err);
         logToConsole(`❌ 入庫データのロード失敗: ${err.message || err}`, "nyuko");
         showToast("❌ 入庫データの取得に失敗しました。", "error");
     }
+}
+
+// 月別サマリーの更新
+async function updateMonthlySummary() {
+    const listContainer = document.getElementById('monthly-summary-list');
+    if (!listContainer) return;
+
+    const storeCode = document.getElementById('filter-res-store')?.value;
+    const route = document.getElementById('filter-res-route')?.value;
+    const rescheduledOnly = document.getElementById('filter-res-rescheduled-only')?.checked;
+
+    let monthlyData = [];
+
+    if (supabaseClient) {
+        try {
+            // ビューからデータを取得
+            let query = supabaseClient.from('monthly_reservation_summary').select('*');
+            if (storeCode && storeCode !== 'all') {
+                query = query.eq('store_code', storeCode);
+            }
+            if (route && route !== 'all') {
+                query = query.eq('route', route);
+            }
+            if (rescheduledOnly) {
+                query = query.eq('rescheduled', true);
+            }
+
+            const { data, error } = await query;
+            if (error) throw error;
+
+            // 月ごとに集計をマージ
+            const summaryMap = {};
+            (data || []).forEach(row => {
+                const m = row.month;
+                const c = parseInt(row.count) || 0;
+                summaryMap[m] = (summaryMap[m] || 0) + c;
+            });
+
+            // キー（月）でソート（降順）
+            monthlyData = Object.entries(summaryMap).map(([month, count]) => ({ month, count }))
+                .sort((a, b) => b.month.localeCompare(a.month));
+
+        } catch (err) {
+            console.error("月別サマリーの取得失敗:", err);
+            listContainer.innerHTML = `<span style="color: var(--danger); font-size: 12px;">⚠️ サマリーの取得に失敗しました: ${err.message || err}</span>`;
+            return;
+        }
+    } else {
+        // デモモード：ローカルキャッシュから集計
+        let filtered = [...reservationsCache];
+        if (storeCode && storeCode !== 'all') {
+            filtered = filtered.filter(r => r.store_code === storeCode);
+        }
+        if (route && route !== 'all') {
+            filtered = filtered.filter(r => r.route === route);
+        }
+        if (rescheduledOnly) {
+            filtered = filtered.filter(r => r.previous_reception_date !== null && r.previous_reception_date !== undefined);
+        }
+
+        const summaryMap = {};
+        filtered.forEach(r => {
+            if (r.reception_date) {
+                const m = r.reception_date.substring(0, 7); // YYYY-MM
+                summaryMap[m] = (summaryMap[m] || 0) + 1;
+            }
+        });
+
+        monthlyData = Object.entries(summaryMap).map(([month, count]) => ({ month, count }))
+            .sort((a, b) => b.month.localeCompare(a.month));
+    }
+
+    // 描画
+    if (monthlyData.length === 0) {
+        listContainer.innerHTML = '<span style="color: var(--text-muted); font-size: 12px;">データがありません。</span>';
+        return;
+    }
+
+    listContainer.innerHTML = '';
+    
+    // 現在選択されている月を取得
+    const filterStart = document.getElementById('filter-res-start-month')?.value;
+    const filterEnd = document.getElementById('filter-res-end-month')?.value;
+
+    monthlyData.forEach(item => {
+        const badge = document.createElement('div');
+        const isActive = (filterStart === item.month && filterEnd === item.month);
+        
+        badge.className = `badge monthly-summary-badge ${isActive ? 'active' : ''}`;
+        
+        // スタイルを設定 (Vibrant UI Aesthetics)
+        badge.style.padding = '6px 12px';
+        badge.style.borderRadius = '20px';
+        badge.style.fontSize = '12px';
+        badge.style.fontWeight = '600';
+        badge.style.cursor = 'pointer';
+        badge.style.display = 'inline-flex';
+        badge.style.alignItems = 'center';
+        badge.style.gap = '6px';
+        badge.style.transition = 'all 0.2s ease';
+        
+        if (isActive) {
+            badge.style.background = 'linear-gradient(135deg, #3b82f6, #2563eb)';
+            badge.style.color = '#ffffff';
+            badge.style.boxShadow = '0 0 10px rgba(59, 130, 246, 0.5)';
+            badge.style.border = '1px solid #60a5fa';
+        } else {
+            badge.style.background = 'rgba(30, 41, 59, 0.6)';
+            badge.style.color = 'var(--text-main)';
+            badge.style.border = '1px solid var(--border-color)';
+        }
+
+        // ホバーエフェクト
+        badge.onmouseover = () => {
+            if (!isActive) {
+                badge.style.background = 'rgba(59, 130, 246, 0.15)';
+                badge.style.borderColor = '#3b82f6';
+            }
+        };
+        badge.onmouseout = () => {
+            if (!isActive) {
+                badge.style.background = 'rgba(30, 41, 59, 0.6)';
+                badge.style.borderColor = 'var(--border-color)';
+            }
+        };
+
+        const year = item.month.substring(0, 4);
+        const monthNum = parseInt(item.month.substring(5, 7));
+        badge.innerHTML = `📅 ${year}年${monthNum}月 <span style="opacity: 0.8; font-weight: normal;">(${item.count}件)</span>`;
+        
+        badge.onclick = () => {
+            const startInput = document.getElementById('filter-res-start-month');
+            const endInput = document.getElementById('filter-res-end-month');
+            if (!startInput || !endInput) return;
+
+            if (isActive) {
+                // すでに選択されている月を再度クリックした場合はクリア
+                startInput.value = '';
+                endInput.value = '';
+            } else {
+                // 選択した月にセット
+                startInput.value = item.month;
+                endInput.value = item.month;
+            }
+            applyReservationFilters();
+        };
+
+        listContainer.appendChild(badge);
+    });
 }
 
 // 店舗フィルターの構築
@@ -1880,8 +2033,9 @@ function renderReservationGrid() {
     }
 }
 
-function applyReservationFilters() {
+async function applyReservationFilters() {
     renderReservationGrid();
+    await updateMonthlySummary();
 }
 
 
@@ -3700,6 +3854,7 @@ window.closeStoreImportModal = closeStoreImportModal;
 window.handleStoreImportSubmit = handleStoreImportSubmit;
 window.loadReservationsList = loadReservationsList;
 window.applyReservationFilters = applyReservationFilters;
+window.updateMonthlySummary = updateMonthlySummary;
 
 // 💡 自動テスト検証用のグローバルエクスポート
 window.__appDebug = {
@@ -3707,6 +3862,8 @@ window.__appDebug = {
     set campaignsCache(val) { campaignsCache = val; },
     get storesCache() { return storesCache; },
     set storesCache(val) { storesCache = val; },
+    get reservationsCache() { return reservationsCache; },
+    set reservationsCache(val) { reservationsCache = val; },
     renderCampaignGrid: renderCampaignGrid,
     deleteCampaignDeliveries: deleteCampaignDeliveries,
     processGridFile: processGridFile,
