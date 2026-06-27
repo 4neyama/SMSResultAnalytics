@@ -8,6 +8,7 @@ let currentTab = 'dashboard-view';
 let isAdmin = false;
 let selectedFile = null;
 let activeUploadingCampaignId = null; // CSVアップロード中のキャンペーンIDを保持
+let isDataLoading = false; // 💡 二重ロード防止ロックフラグ
 
 // キャッシュデータ
 let storesCache = [];
@@ -331,6 +332,13 @@ function setAdminMode(active) {
 
 async function loadInitialData(skipDeliveries = false) {
     if (!supabaseClient) return;
+    
+    // 💡 複数セッション（ログイン・ログアウトの重複やHMR等）の競合によるキャッシュ上書きを防ぐロック
+    if (isDataLoading) {
+        console.log("⚠️ loadInitialData がすでに処理中のため、重複呼び出しを無視します。");
+        return;
+    }
+    isDataLoading = true;
 
     try {
         // 💡 ブラウザが file:// や localhost 環境で API レスポンスを強制キャッシュし、
@@ -418,6 +426,8 @@ async function loadInitialData(skipDeliveries = false) {
     } catch (err) {
         console.error("データ読み込みエラー:", err);
         showToast("❌ データの読み込みに失敗しました。", "error");
+    } finally {
+        isDataLoading = false;
     }
 }
 
