@@ -1203,10 +1203,22 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
             delete newRow["連携先システム顧客ID"];
 
             // 3. 送信前バリデーション (PII混入チェック)
-            for (const [k, v] of Object.entries(newRow)) {
-                if (k !== 'hashed_customer_id' && v && phoneRegex.test(String(v))) {
+            // 💡 データベースに平文で登録される基本項目（ストアコードや予約IDなど）に限定して電話番号の混入をスキャンします。
+            // データベースに保存されず破棄される「コメント」などの不要な列に電話番号が含まれていても、漏洩リスクはないため安全にスルーします。
+            const validationTargets = {};
+            if (type === 'haishin') {
+                validationTargets["発券SSコード"] = row["発券SSコード"] || row["SSコード"] || "";
+                validationTargets["店舗名"] = row["店舗名"] || row["店舗"] || "";
+            } else {
+                validationTargets["予約ID"] = row["予約ID"] || "";
+                validationTargets["予約受付店舗ID"] = row["予約受付店舗ID"] || "";
+                validationTargets["予約経路"] = row["予約経路"] || "";
+            }
+
+            for (const [k, v] of Object.entries(validationTargets)) {
+                if (v && phoneRegex.test(String(v))) {
                     piiScannedBlocked = true;
-                    logToConsole(`⚠️ 危険: レコード #${idx+1} の [${k}] に個人情報(電話番号等)の混入を検知しました！`);
+                    logToConsole(`⚠️ 危険: レコード #${idx+1} の基本項目 [${k}] に個人情報(電話番号等)の混入を検知しました！`);
                     return null;
                 }
             }
