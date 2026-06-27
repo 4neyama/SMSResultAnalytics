@@ -197,6 +197,13 @@ async function initSupabase() {
 
 // 管理者セッションが有効かどうかをチェックするヘルパー関数
 async function checkAdminSession() {
+    // 💡 自動テスト検証用の擬似セッション切れフック
+    if (window.__testSessionExpired) {
+        showToast("⚠️ セッションの有効期限が切れました。再度ログインしてください。", "warning");
+        logToConsole("⚠️ エラー: 管理者セッションが無効です。再ログインが必要です。");
+        openAdminModal(); // 自動的に管理者ログイン画面を表示
+        return false;
+    }
     if (!supabaseClient) return true; // オフラインデモ時は常にスルー
     try {
         const { data: { session } } = await supabaseClient.auth.getSession();
@@ -666,7 +673,6 @@ function switchTab(tabId) {
         loadStoreSmsGrid();
     } else if (tabId === 'import-view') {
         loadStoresMaster();
-        buildCampaignSelector();
     } else if (tabId === 'mapping-view') {
         renderMappingRules();
     } else {
@@ -3172,4 +3178,16 @@ window.closeAdminModal = closeAdminModal;
 window.handleAdminLogin = handleAdminLogin;
 window.closeStoreImportModal = closeStoreImportModal;
 window.handleStoreImportSubmit = handleStoreImportSubmit;
+
+// 💡 自動テスト検証用のグローバルエクスポート
+window.__appDebug = {
+    get campaignsCache() { return campaignsCache; },
+    set campaignsCache(val) { campaignsCache = val; },
+    get storesCache() { return storesCache; },
+    set storesCache(val) { storesCache = val; },
+    renderCampaignGrid: renderCampaignGrid,
+    deleteCampaignDeliveries: deleteCampaignDeliveries,
+    processGridFile: processGridFile,
+    saveCampaignGrid: saveCampaignGrid
+};
 
