@@ -2047,7 +2047,7 @@ function renderReservationGrid() {
     }
 
     tbody.innerHTML = '';
-    filtered.forEach(r => {
+    displayData.forEach(r => {
         const tr = document.createElement('tr');
         
         let dateHtml = r.reception_date;
@@ -2073,7 +2073,7 @@ function renderReservationGrid() {
     });
 
     if (countSpan) {
-        countSpan.textContent = `表示件数: ${filtered.length} 件`;
+        countSpan.textContent = `表示件数: ${displayData.length} 件`;
     }
 }
 
