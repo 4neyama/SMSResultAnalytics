@@ -1247,6 +1247,27 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
     }
 
     try {
+        // 💡 インサート前に、店舗マスタに 'unknown' コードが登録されていることを確認・保証する
+        // これにより外部キー制約エラーを回避
+        if (supabaseClient) {
+            const hasUnknown = storesCache.some(s => s.store_code === 'unknown');
+            if (!hasUnknown) {
+                const unknownStore = {
+                    store_code: 'unknown',
+                    store_name: '不明な店舗',
+                    area_name: '不明'
+                };
+                const { error: upsertErr } = await supabaseClient
+                    .from('stores')
+                    .upsert([unknownStore]);
+                if (!upsertErr) {
+                    storesCache.push(unknownStore);
+                } else {
+                    console.error("Failed to create unknown store in DB:", upsertErr);
+                }
+            }
+        }
+
         logToConsole("🧹 個人情報（PII）列のドロップおよびハッシュ化（並行処理）を開始...");
 
         // 削除対象列の定義 (平文で個人情報が混入するリスクの高い項目およびフリーテキスト欄)
@@ -1367,11 +1388,20 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
                     sms_count: parseInt(newRow["通数"]) || 1
                 };
             } else {
+                const csvStoreCode = (newRow["予約受付店舗ID"] || "").trim();
+                let matchedStoreCode = csvStoreCode;
+
+                // コードが直接渡されていないか、マスタに存在しない場合、'unknown' に補正する
+                if (!matchedStoreCode || !storesCache.some(s => s.store_code === matchedStoreCode)) {
+                    logToConsole(`⚠️ 警告: レコード #${idx+1} の予約受付店舗ID「${csvStoreCode || '未指定'}」は店舗マスタに適合しません。コード「unknown」として処理されます。`);
+                    matchedStoreCode = "unknown";
+                }
+
                 return {
                     reservation_id: newRow["予約ID"],
                     reception_date: newRow["受付日"],
                     work_group: newRow["作業グループ"],
-                    store_code: newRow["予約受付店舗ID"],
+                    store_code: matchedStoreCode,
                     hashed_customer_id: newRow["hashed_customer_id"],
                     route: newRow["予約経路"],
                     route_store: newRow["予約経路_店頭入力用"],

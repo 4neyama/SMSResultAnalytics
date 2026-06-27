@@ -82,6 +82,11 @@ INSERT INTO category_mappings (category, work_group) VALUES
 ('点検', '点検')
 ON CONFLICT (category, work_group) DO NOTHING;
 
+-- 8.1. 不明店舗 (unknown) の登録
+INSERT INTO stores (store_code, store_name, area_name) VALUES
+('unknown', '不明な店舗', '不明')
+ON CONFLICT (store_code) DO NOTHING;
+
 -- 8. インデックスの作成
 CREATE INDEX IF NOT EXISTS idx_sms_deliveries_campaign ON sms_deliveries(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_sms_deliveries_store ON sms_deliveries(store_code);
