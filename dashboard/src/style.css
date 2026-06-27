@@ -606,7 +606,7 @@ tr:hover td {
 
 /* 店頭マスタなどの登録表 (グリッド編集) */
 .editable-grid-container {
-    max-height: 400px;
+    max-height: 650px;
     overflow-y: auto;
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius-sm);
