@@ -49,15 +49,17 @@ CREATE TABLE sms_deliveries (
 -- 5. 予約実績テーブルの作成 (個人情報はハッシュ化・除外済み)
 CREATE TABLE reservations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    reservation_id VARCHAR(50) NOT NULL,        -- 予約ID
+    reservation_id VARCHAR(50) NOT NULL UNIQUE,  -- 予約ID (一意キー)
     reception_date DATE NOT NULL,              -- 受付日
+    previous_reception_date DATE,              -- 変更前の受付日 (日程変更時に自動退避)
     work_group VARCHAR(50) NOT NULL,           -- 作業グループ (洗車, オイル交換, コーティング, 車検, 点検など)
     store_code VARCHAR(50) REFERENCES stores(store_code) ON DELETE CASCADE,
     hashed_customer_id VARCHAR(64),            -- SHA-256で不可逆ハッシュ化した連携先システム顧客ID等
     route VARCHAR(100),                        -- 予約経路 (SMS予約, LINE予約, 入庫予約など)
     route_store VARCHAR(100),                  -- 予約経路_店頭入力用 (EMO_WEBなど)
     status VARCHAR(50),                        -- ステータス (本予約, 予約確認済みなど)
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
 -- 6. 店舗独自SMSテーブルの作成

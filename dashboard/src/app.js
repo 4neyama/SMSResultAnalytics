@@ -146,17 +146,18 @@ function cleanStr(str) {
 }
 
 // インポートログ用コンソール出力関数
-function logToConsole(message) {
-    const consoleEl = document.getElementById('import-console');
+function logToConsole(message, type = 'haishin') {
+    const consoleId = type === 'haishin' ? 'import-console' : 'nyuko-import-console';
+    const consoleEl = document.getElementById(consoleId);
     if (consoleEl) {
         // 初期プレースホルダーをクリア
-        if (consoleEl.innerText.includes("コンソール待機") || consoleEl.innerText.includes("CSVドロップ")) {
+        if (consoleEl.innerText.includes("コンソール待機") || consoleEl.innerText.includes("CSVドロップ") || consoleEl.innerText.includes("左側のエリア")) {
             consoleEl.innerText = "";
         }
         consoleEl.innerText += message + "\n";
         consoleEl.scrollTop = consoleEl.scrollHeight; // 自動スクロール
     }
-    console.log(message);
+    console.log(`[${type}] ${message}`);
 }
 
 // 共通パスワード認証の実行
@@ -779,12 +780,14 @@ function switchTab(tabId) {
     document.getElementById(tabId).classList.add('active');
 
     // タブ切り替え時のデータロード・描画処理
-    if (tabId === 'store-sms-view') {
+    if (tabId === 'sms-manage-view') {
         loadStoreSmsGrid();
-    } else if (tabId === 'import-view') {
-        loadStoresMaster();
-    } else if (tabId === 'mapping-view') {
-        renderMappingRules();
+        renderCampaignGrid(); // スケジュールアコーディオンも再描画
+    } else if (tabId === 'reservation-manage-view') {
+        loadReservationsList(); // 入庫明細一覧のロード
+    } else if (tabId === 'system-setting-view') {
+        loadStoresMaster(); // 店舗マスタのロード
+        renderMappingRules(); // カテゴリマッピングのロード
     } else {
         loadAllData();
     }
@@ -1286,6 +1289,8 @@ function handleImportTypeChange() {
 
 // 行ごとのPII除去・不可逆ハッシュ化・バリデーション処理
 async function processAndUploadRows(rows, fieldnames, type, campaignId) {
+    const log = (msg) => logToConsole(msg, type);
+
     // 💡 画面上のアップロードセルをローディング表示にする
     if (type === 'haishin' && campaignId) {
         activeUploadingCampaignId = campaignId;
@@ -1315,7 +1320,7 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
             }
         }
 
-        logToConsole("🧹 個人情報（PII）列のドロップおよびハッシュ化（並行処理）を開始...");
+        log("🧹 個人情報（PII）列のドロップおよびハッシュ化（並行処理）を開始...");
 
         // 削除対象列の定義 (平文で個人情報が混入するリスクの高い項目およびフリーテキスト欄)
         const columnsToRemoveHaishin = [
@@ -1333,7 +1338,7 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
         const targetRemoveCols = type === 'haishin' ? columnsToRemoveHaishin : columnsToRemoveNyuko;
         const fields = fieldnames || [];
         const removedCount = fields.filter(f => targetRemoveCols.includes(f)).length;
-        logToConsole(`🔒 PII対象列を特定: ${removedCount} 列を除去します。`);
+        log(`🔒 PII対象列を特定: ${removedCount} 列を除去します。`);
 
         const cleanRecords = [];
         let piiScannedBlocked = false;
@@ -1393,7 +1398,7 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
             for (const [k, v] of Object.entries(validationTargets)) {
                 if (v && phoneRegex.test(String(v))) {
                     piiScannedBlocked = true;
-                    logToConsole(`⚠️ 危険: レコード #${idx+1} の基本項目 [${k}] に個人情報(電話番号等)の混入を検知しました！`);
+                    log(`⚠️ 危険: レコード #${idx+1} の基本項目 [${k}] に個人情報(電話番号等)の混入を検知しました！`);
                     return null;
                 }
             }
@@ -1506,40 +1511,81 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
         
         // 💡 蓄積された警告ログをまとめて出力（大量のDOM操作によるフリーズを防止）
         if (warningLogs.length > 0) {
-            logToConsole(`📝 店舗コード不一致の警告が ${warningLogs.length} 件発生しました。`);
+            log(`📝 店舗コード不一致の警告が ${warningLogs.length} 件発生しました。`);
             const maxShow = 20;
-            warningLogs.slice(0, maxShow).forEach(msg => logToConsole(msg));
+            warningLogs.slice(0, maxShow).forEach(msg => log(msg));
             if (warningLogs.length > maxShow) {
-                logToConsole(`...（他 ${warningLogs.length - maxShow} 件の警告は省略されました。ブラウザのデベロッパーツールで確認できます）`);
+                log(`...（他 ${warningLogs.length - maxShow} 件の警告は省略されました。ブラウザのデベロッパーツールで確認できます）`);
                 // 開発者用にブラウザのコンソールに全件出力
                 warningLogs.slice(maxShow).forEach(msg => console.log(msg));
             }
         }
         
         if (piiScannedBlocked) {
-            logToConsole(`🚨 アップロードを強制停止しました。個人情報は送信されていません。`);
+            log(`🚨 アップロードを強制停止しました。個人情報は送信されていません。`);
             showToast("🚨 個人情報の混入検知により処理を停止しました。", "error");
             return;
         }
 
         const validCleanRecords = processResults.filter(r => r !== null);
-        logToConsole(`✅ PII除去＆ハッシュ化の検証を通過しました（クリーン件数: ${validCleanRecords.length}件）。`);
-        logToConsole("🚀 データベースへインポート中...");
+        log(`✅ PII除去＆ハッシュ化の検証を通過しました（クリーン件数: ${validCleanRecords.length}件）。`);
+        log("🚀 データベースへインポート中...");
 
         if (!supabaseClient) {
             // オフライン・デモの場合
-            logToConsole(`💡 デモモード: メモリ上に一時格納しました (${validCleanRecords.length} 件)。`);
+            log(`💡 デモモード: メモリ上に一時格納しました (${validCleanRecords.length} 件)。`);
             if (type === 'haishin') {
                 smsDeliveriesCache = smsDeliveriesCache.filter(d => d.campaign_id !== campaignId);
                 smsDeliveriesCache.push(...validCleanRecords);
             } else {
+                const newIds = validCleanRecords.map(r => r.reservation_id);
+                reservationsCache = reservationsCache.filter(r => !newIds.includes(r.reservation_id));
                 reservationsCache.push(...validCleanRecords);
             }
-            logToConsole("🎉 インポート成功（デモ）！ダッシュボードに反映されました。");
+            log("🎉 インポート成功（デモ）！ダッシュボードに反映されました。");
             showToast("📥 データを一時インポートしました（デモ）。", "success");
             renderCampaignGrid();
             loadAllData();
             return;
+        }
+
+        // 💡 nyuko の場合、すでに同じ予約IDが存在し予約日が異なっているなら previous_reception_date に退避する
+        if (type === 'nyuko') {
+            log("🔍 既存の予約IDと日付の重複チェックおよび変更前の予約日退避処理を実行中...");
+            const reservationIds = validCleanRecords.map(r => r.reservation_id).filter(Boolean);
+            
+            const existingMap = {};
+            for (let offset = 0; offset < reservationIds.length; offset += 1000) {
+                const chunkIds = reservationIds.slice(offset, offset + 1000);
+                const { data, error } = await supabaseClient
+                    .from('reservations')
+                    .select('reservation_id, reception_date, previous_reception_date')
+                    .in('reservation_id', chunkIds);
+                
+                if (!error && data) {
+                    data.forEach(item => {
+                        existingMap[item.reservation_id] = {
+                            reception_date: item.reception_date,
+                            previous_reception_date: item.previous_reception_date
+                        };
+                    });
+                }
+            }
+
+            validCleanRecords.forEach(record => {
+                const existing = existingMap[record.reservation_id];
+                if (existing) {
+                    const csvDate = record.reception_date;
+                    const dbDate = existing.reception_date;
+                    
+                    if (csvDate !== dbDate) {
+                        record.previous_reception_date = dbDate;
+                        log(`🔄 予約ID「${record.reservation_id}」の日程変更を検出: ${dbDate} ➔ ${csvDate}`);
+                    } else {
+                        record.previous_reception_date = existing.previous_reception_date;
+                    }
+                }
+            });
         }
 
         const table = type === 'haishin' ? 'sms_deliveries' : 'reservations';
@@ -1550,7 +1596,7 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
             if (delErr) throw delErr;
         }
 
-        // 💡 データの分割（チャンク）バッチインサートの実装（1000件単位）
+        // 💡 データの分割（チャンク）バッチインサート/アップサートの実装（1000件単位）
         const CHUNK_SIZE = 1000;
         let insertedCount = 0;
         
@@ -1559,15 +1605,25 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
             const chunkIndex = Math.floor(i / CHUNK_SIZE) + 1;
             const totalChunks = Math.ceil(validCleanRecords.length / CHUNK_SIZE);
             
-            logToConsole(`   [${chunkIndex}/${totalChunks}] チャンクを送信中 (${chunk.length}件)...`);
+            log(`   [${chunkIndex}/${totalChunks}] チャンクを送信中 (${chunk.length}件)...`);
             
-            const { error } = await supabaseClient.from(table).insert(chunk);
+            let error;
+            if (type === 'haishin') {
+                const res = await supabaseClient.from(table).insert(chunk);
+                error = res.error;
+            } else {
+                chunk.forEach(r => {
+                    r.updated_at = new Date().toISOString();
+                });
+                const res = await supabaseClient.from(table).upsert(chunk, { onConflict: 'reservation_id' });
+                error = res.error;
+            }
             if (error) throw error;
             
             insertedCount += chunk.length;
         }
 
-        logToConsole(`🎉 アップロードが成功しました！ 合計 ${insertedCount} 件のレコードが登録されました。`);
+        log(`🎉 アップロードが成功しました！ 合計 ${insertedCount} 件のレコードが登録・更新されました。`);
         showToast("📥 データのインポートが完了しました！", "success");
         
         // クライアント側のメモリキャッシュへ即座に手動マージ（反映ラグ対策）
@@ -1575,11 +1631,10 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
             smsDeliveriesCache = smsDeliveriesCache.filter(d => d.campaign_id !== campaignId);
             smsDeliveriesCache.push(...validCleanRecords);
             
-            // 💡 データの永続化（親子レコードの一貫性）を保証するため、CSVアップロード成功時にグリッドの変更を自動でセーブ
-            logToConsole("🔄 CSVインポート完了に伴い、グリッド設定を自動セーブしてデータベースへの永続化を確定しています...");
+            log("🔄 CSVインポート完了に伴い、グリッド設定を自動セーブしてデータベースへの永続化を確定しています...");
             await saveCampaignGrid(true);
         } else {
-            reservationsCache.push(...validCleanRecords);
+            await loadReservationsList();
             loadAllData();
         }
     } catch (err) {
@@ -1596,22 +1651,184 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
 }
 
 
+// ==========================================================================
+// 8.2. 新設「入庫予約管理」機能の実装
+// ==========================================================================
+
+// 入庫データのロード
+async function loadReservationsList() {
+    if (!supabaseClient) {
+        logToConsole("⚠️ Supabase未接続のため、デモ用入庫データを使用します。", "nyuko");
+        renderReservationGrid();
+        return;
+    }
+
+    try {
+        logToConsole("⏳ データベースから入庫予約データを読み込み中...", "nyuko");
+        const { data, error } = await supabaseClient
+            .from('reservations')
+            .select(`
+                id,
+                reservation_id,
+                reception_date,
+                previous_reception_date,
+                work_group,
+                store_code,
+                hashed_customer_id,
+                route,
+                route_store,
+                status,
+                created_at,
+                updated_at,
+                stores (
+                    store_name
+                )
+            `)
+            .order('updated_at', { ascending: false });
+
+        if (error) throw error;
+
+        // キャッシュへ退避
+        reservationsCache = (data || []).map(item => ({
+            ...item,
+            store_name: item.stores ? item.stores.store_name : '不明な店舗'
+        }));
+
+        logToConsole(`✅ 入庫予約データをロード完了 (${reservationsCache.length}件)`, "nyuko");
+        
+        // 店舗フィルターのオプションを動的に再構築
+        buildReservationStoreFilter();
+        
+        // 描画実行
+        renderReservationGrid();
+    } catch (err) {
+        console.error(err);
+        logToConsole(`❌ 入庫データのロード失敗: ${err.message || err}`, "nyuko");
+        showToast("❌ 入庫データの取得に失敗しました。", "error");
+    }
+}
+
+// 店舗フィルターの構築
+function buildReservationStoreFilter() {
+    const select = document.getElementById('filter-res-store');
+    if (!select) return;
+
+    // 現在の選択値を維持
+    const curVal = select.value;
+    select.innerHTML = '<option value="all">すべての店舗</option>';
+
+    // 重複のない店舗一覧を取得
+    const uniqueStores = [];
+    storesCache.forEach(s => {
+        if (s.store_code !== 'unknown' && !uniqueStores.some(u => u.store_code === s.store_code)) {
+            uniqueStores.push(s);
+        }
+    });
+
+    uniqueStores.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.store_code;
+        opt.textContent = s.store_name;
+        select.appendChild(opt);
+    });
+
+    select.value = curVal;
+}
+
+// 明細データの描画
+function renderReservationGrid() {
+    const tbody = document.getElementById('reservation-list-body');
+    const countSpan = document.getElementById('reservation-list-count');
+    if (!tbody) return;
+
+    // 検索・フィルター条件の取得
+    const startMonth = document.getElementById('filter-res-start-month')?.value; // YYYY-MM
+    const endMonth = document.getElementById('filter-res-end-month')?.value;     // YYYY-MM
+    const storeCode = document.getElementById('filter-res-store')?.value;
+    const route = document.getElementById('filter-res-route')?.value;
+    const rescheduledOnly = document.getElementById('filter-res-rescheduled-only')?.checked;
+
+    // 絞り込み処理
+    let filtered = [...reservationsCache];
+
+    if (startMonth) {
+        filtered = filtered.filter(r => r.reception_date >= `${startMonth}-01`);
+    }
+    if (endMonth) {
+        const parts = endMonth.split('-');
+        const nextM = parseInt(parts[1]) + 1;
+        const nextMonthStr = nextM > 12 ? `${parseInt(parts[0]) + 1}-01` : `${parts[0]}-${String(nextM).padStart(2, '0')}`;
+        filtered = filtered.filter(r => r.reception_date < `${nextMonthStr}-01`);
+    }
+    if (storeCode && storeCode !== 'all') {
+        filtered = filtered.filter(r => r.store_code === storeCode);
+    }
+    if (route && route !== 'all') {
+        filtered = filtered.filter(r => r.route === route);
+    }
+    if (rescheduledOnly) {
+        filtered = filtered.filter(r => r.previous_reception_date !== null && r.previous_reception_date !== undefined);
+    }
+
+    // テーブル描画
+    if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">該当する入庫データが見つかりません。</td></tr>';
+        if (countSpan) countSpan.textContent = "表示件数: 0 件";
+        return;
+    }
+
+    tbody.innerHTML = '';
+    filtered.forEach(r => {
+        const tr = document.createElement('tr');
+        
+        let dateHtml = r.reception_date;
+        if (r.previous_reception_date) {
+            dateHtml = `<span style="text-decoration: line-through; color: var(--text-muted); font-size: 11px;">${r.previous_reception_date}</span><br>➔ <span style="color: var(--secondary); font-weight: 600;">${r.reception_date}</span>`;
+            tr.style.background = 'rgba(59, 130, 246, 0.05)';
+        }
+
+        const shortCustId = r.hashed_customer_id ? `${r.hashed_customer_id.substring(0, 10)}...` : 'なし';
+        const updatedTimeStr = r.updated_at ? new Date(r.updated_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) : '-';
+
+        tr.innerHTML = `
+            <td style="font-family: monospace; font-weight: 600;">${r.reservation_id || '-'}</td>
+            <td>${r.store_name || '不明な店舗'}</td>
+            <td><span class="badge" style="background: rgba(147, 197, 253, 0.15); color: #93c5fd; padding: 4px 8px; border-radius: 4px;">${r.work_group || '-'}</span></td>
+            <td>${dateHtml}</td>
+            <td><span class="badge" style="background: rgba(110, 231, 183, 0.15); color: #6ee7b7; padding: 4px 8px; border-radius: 4px;">${r.route || '-'}</span></td>
+            <td><span class="badge" style="background: rgba(244, 63, 94, 0.15); color: #f43f5e; padding: 4px 8px; border-radius: 4px;">${r.status || '-'}</span></td>
+            <td style="font-family: monospace; color: var(--text-muted); font-size: 11px;" title="${r.hashed_customer_id || ''}">${shortCustId}</td>
+            <td style="color: var(--text-muted); font-size: 11px;">${updatedTimeStr}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    if (countSpan) {
+        countSpan.textContent = `表示件数: ${filtered.length} 件`;
+    }
+}
+
+function applyReservationFilters() {
+    renderReservationGrid();
+}
+
+
 // 9. 店舗マスタ ＆ 店舗独自SMS of 編集UIの実装
 
 async function loadStoresMaster() {
     const tbody = document.getElementById('stores-master-body');
     if (storesCache.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--text-muted);">店舗データがありません。左下のボタンから店舗を追加してください。</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">店舗データがありません。左下のボタンから店舗を追加してください。</td></tr>';
         return;
     }
 
     tbody.innerHTML = '';
     storesCache.forEach((store, idx) => {
-        // disabledを撤廃し、既存の店舗も含めてSSコードを自由に変更・手入力できるようにします
         tbody.innerHTML += `
             <tr class="store-master-row" data-idx="${idx}" data-original-code="${store.store_code || ''}">
-                <td><input type="text" class="store-code-input" value="${store.store_code || ''}" placeholder="SSコード (例: 100101)" style="padding: 4px; font-size: 11px; width: 100%;"></td>
-                <td><input type="text" class="store-name-input" value="${store.store_name || ''}" placeholder="SS店舗名" style="padding: 4px; font-size: 11px; width: 100%;"></td>
+                <td><input type="text" class="store-code-input" value="${store.store_code || ''}" placeholder="店舗ID (例: 6921)" style="padding: 4px; font-size: 11px; width: 100%;"></td>
+                <td><input type="text" class="store-ss-code-input" value="${store.ss_code || ''}" placeholder="SSコード (例: 1016229)" style="padding: 4px; font-size: 11px; width: 100%;"></td>
+                <td><input type="text" class="store-name-input" value="${store.store_name || ''}" placeholder="店舗名" style="padding: 4px; font-size: 11px; width: 100%;"></td>
                 <td><input type="text" class="store-area-input" value="${store.area_name || ''}" placeholder="エリア名 (例: 中国1G)" style="padding: 4px; font-size: 11px; width: 100%;"></td>
             </tr>
         `;
@@ -1622,6 +1839,7 @@ async function loadStoresMaster() {
 function addStoreMasterRow() {
     storesCache.push({
         store_code: "",
+        ss_code: "",
         store_name: "",
         area_name: "",
         isNew: true
@@ -1638,11 +1856,13 @@ async function saveStoresMaster() {
 
     rows.forEach(row => {
         const codeInput = row.querySelector('.store-code-input');
+        const ssCodeInput = row.querySelector('.store-ss-code-input');
         const nameInput = row.querySelector('.store-name-input');
         const areaInput = row.querySelector('.store-area-input');
         const originalCode = row.dataset.originalCode || "";
 
         const code = codeInput.value.trim();
+        const ssCode = ssCodeInput.value.trim();
         const name = nameInput.value.trim();
         const area = areaInput.value.trim();
 
@@ -1651,7 +1871,12 @@ async function saveStoresMaster() {
             return;
         }
 
-        updates.push({ store_code: code, store_name: name, area_name: area });
+        updates.push({
+            store_code: code,
+            ss_code: ssCode || null,
+            store_name: name,
+            area_name: area
+        });
 
         // 元のコードが存在し、新しく変更された場合は古いコードを削除対象にする
         if (originalCode && originalCode !== code) {
@@ -1660,7 +1885,7 @@ async function saveStoresMaster() {
     });
 
     if (hasError) {
-        showToast("❌ SSコード、店舗名、エリア名はすべて入力してください。", "error");
+        showToast("❌ 店舗ID、店舗名、エリア名はすべて入力してください。", "error");
         return;
     }
 
@@ -3399,6 +3624,8 @@ window.closeAdminModal = closeAdminModal;
 window.handleAdminLogin = handleAdminLogin;
 window.closeStoreImportModal = closeStoreImportModal;
 window.handleStoreImportSubmit = handleStoreImportSubmit;
+window.loadReservationsList = loadReservationsList;
+window.applyReservationFilters = applyReservationFilters;
 
 // 💡 自動テスト検証用のグローバルエクスポート
 window.__appDebug = {
