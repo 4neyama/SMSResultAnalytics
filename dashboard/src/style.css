@@ -844,14 +844,17 @@ select option {
     border: none !important;
     color: var(--text-muted) !important;
     cursor: pointer;
-    padding: 6px 12px;
+    padding: 6px 10px;
     border-radius: var(--border-radius-sm);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     transition: var(--transition-smooth);
     height: 26px;
-    width: 36px;
+    width: auto;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 500;
 }
 .btn-grid-delete:hover {
     color: #ef4444 !important; /* ホバー時に赤色 */
