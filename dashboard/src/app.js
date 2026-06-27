@@ -2078,8 +2078,7 @@ function renderReservationGrid() {
 }
 
 async function applyReservationFilters() {
-    renderReservationGrid();
-    await updateMonthlySummary();
+    await loadReservationsList();
 }
 
 
