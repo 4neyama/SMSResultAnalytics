@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ENEOSモビリニア 中国支店 | SMS送信予約分析ダッシュボード</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <!-- 1. パスワード保護ゲート画面 (共通閲覧パスワード) -->
+    <div id="auth-gate" class="auth-gate">
+        <div class="glass-card auth-card">
+            <div class="auth-icon">🔒</div>
+            <h2>SMS送信分析ダッシュボード</h2>
+            <p style="color: var(--text-muted); font-size: 14px;">このコンテンツを閲覧するには、共通パスワードを入力してください。</p>
+            <form id="auth-form" onsubmit="handleGateAuth(event)">
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <input type="password" id="gate-password" placeholder="パスワードを入力..." required>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">認証する</button>
+                <p id="gate-error" style="color: var(--danger); font-size: 12px; margin-top: 8px; display: none;">パスワードが正しくありません。</p>
+            </form>
+        </div>
+    </div>
+
+    <!-- 2. アプリケーション本体画面 -->
+    <div class="app-container">
+        
+        <!-- ヘッダー -->
+        <header>
+            <div class="logo-container">
+                <div class="logo-icon">E</div>
+                <div>
+                    <h1>ENEOSモビリニア 中国支店</h1>
+                    <p style="font-size: 11px; color: var(--text-muted); font-weight: 500;">SMS送信・予約分析システム</p>
+                </div>
+            </div>
+            
+            <div class="header-actions">
+                <!-- ナビゲーションタブ -->
+                <div class="nav-tabs" id="main-tabs">
+                    <button class="tab-btn active" onclick="switchTab('dashboard-view')">📊 ダッシュボード</button>
+                    <button class="tab-btn" onclick="switchTab('store-view')">🏬 店舗別分析</button>
+                    <button class="tab-btn admin-only" onclick="switchTab('store-sms-view')" style="display: none;">✉️ 店舗SMS管理</button>
+                    <button class="tab-btn admin-only" onclick="switchTab('import-view')" style="display: none;">📥 データ登録</button>
+                    <button class="tab-btn admin-only" onclick="switchTab('mapping-view')" style="display: none;">⚙️ ルール設定</button>
+                </div>
+
+                <!-- 接続設定ボタン -->
+                <button id="setup-btn" class="btn btn-secondary" onclick="openSetupModal()" style="display: flex; align-items: center; gap: 6px;">⚙️ 接続設定</button>
+                <!-- ログイン・ステータスボタン -->
+                <button id="admin-login-btn" class="btn btn-secondary" onclick="openAdminModal()">🔑 管理者ログイン</button>
+                <div id="admin-status-container" style="display: none; align-items: center; gap: 12px;">
+                    <span style="font-size: 12px; color: var(--secondary); font-weight: 600;">● 管理者モード</span>
+                    <button class="btn btn-secondary" onclick="handleAdminLogout()">ログアウト</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- メインコンテンツ領域 -->
+        <main>
+            
+            <!-- フィルターバー (全般閲覧用) -->
+            <section id="global-filter-bar" class="glass-card" style="margin-bottom: 24px;">
+                <div class="filter-bar">
+                    <div class="filter-item" style="flex: 2; min-width: 420px;">
+                        <label>📅 表示期間</label>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <!-- 開始 -->
+                            <select id="filter-start-year" onchange="loadAllData()" style="flex: 1.2; padding: 10px 12px; font-size: 13px;">
+                                <option value="">-年-</option>
+                            </select>
+                            <select id="filter-start-month" onchange="loadAllData()" style="flex: 1; padding: 10px 12px; font-size: 13px;">
+                                <option value="01">1月</option>
+                                <option value="02">2月</option>
+                                <option value="03">3月</option>
+                                <option value="04">4月</option>
+                                <option value="05">5月</option>
+                                <option value="06">6月</option>
+                                <option value="07">7月</option>
+                                <option value="08">8月</option>
+                                <option value="09">9月</option>
+                                <option value="10">10月</option>
+                                <option value="11">11月</option>
+                                <option value="12">12月</option>
+                            </select>
+                            
+                            <span style="color: var(--text-muted); font-size: 14px; font-weight: bold; padding: 0 4px;">〜</span>
+                            
+                            <!-- 終了 -->
+                            <select id="filter-end-year" onchange="loadAllData()" style="flex: 1.2; padding: 10px 12px; font-size: 13px;">
+                                <option value="">-年-</option>
+                            </select>
+                            <select id="filter-end-month" onchange="loadAllData()" style="flex: 1; padding: 10px 12px; font-size: 13px;">
+                                <option value="01">1月</option>
+                                <option value="02">2月</option>
+                                <option value="03">3月</option>
+                                <option value="04">4月</option>
+                                <option value="05">5月</option>
+                                <option value="06">6月</option>
+                                <option value="07">7月</option>
+                                <option value="08">8月</option>
+                                <option value="09">9月</option>
+                                <option value="10">10月</option>
+                                <option value="11">11月</option>
+                                <option value="12">12月</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="filter-item">
+                        <label for="filter-area">エリア</label>
+                        <select id="filter-area" onchange="handleAreaChange()">
+                            <option value="all">全エリア</option>
+                        </select>
+                    </div>
+                    <div class="filter-item">
+                        <label for="filter-store">対象店舗</label>
+                        <select id="filter-store" onchange="loadAllData()">
+                            <option value="all">全店舗</option>
+                        </select>
+                    </div>
+                    <div class="filter-item">
+                        <label for="filter-category">配信カテゴリ</label>
+                        <select id="filter-category" onchange="loadAllData()">
+                            <option value="all">全カテゴリ</option>
+                            <option value="オイル">オイル</option>
+                            <option value="コーティング">コーティング</option>
+                            <option value="洗車">洗車</option>
+                            <option value="車検">車検</option>
+                            <option value="点検">点検</option>
+                        </select>
+                    </div>
+                    
+                    <!-- 集計ロジックのトグルスイッチ -->
+                    <div class="toggle-container" style="margin-left: auto;">
+                        <span style="font-size: 12px; color: var(--text-muted); font-weight: 600;">単純カウント</span>
+                        <label class="switch">
+                            <input type="checkbox" id="logic-toggle" onchange="handleLogicToggle()">
+                            <span class="slider"></span>
+                        </label>
+                        <span style="font-size: 12px; color: var(--text-main); font-weight: 600;">顧客ID突合(真の効果)</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 1: ダッシュボードメインビュー -->
+            <div id="dashboard-view" class="tab-content active">
+                
+                <!-- KPI グリッド -->
+                <div class="kpi-grid">
+                    <div class="glass-card kpi-card kpi-blue">
+                        <span class="kpi-title">📩 累計SMS送信数</span>
+                        <div class="kpi-value" id="kpi-sms-sent">-</div>
+                        <span class="kpi-meta" id="kpi-sms-meta">本部宛先: - 件 (通数: - 通) / 店舗独自: - 件</span>
+                    </div>
+                    <div class="glass-card kpi-card kpi-emerald">
+                        <span class="kpi-title">📋 累計獲得予約数</span>
+                        <div class="kpi-value" id="kpi-reservations">-</div>
+                        <span class="kpi-meta" id="kpi-reservations-meta">SMS予約: - / LINE予約: - / EMo: -</span>
+                    </div>
+                    <div class="glass-card kpi-card kpi-amber">
+                        <span class="kpi-title">📈 平均予約率</span>
+                        <div class="kpi-value" id="kpi-rate">-</div>
+                        <span class="kpi-meta" id="kpi-rate-meta">予約数 / (送信数 + 店舗SMS)</span>
+                    </div>
+                </div>
+
+                <!-- グラフエリア -->
+                <div class="charts-grid" style="margin-top: 24px;">
+                    <!-- 月次推移折れ線グラフ -->
+                    <div class="glass-card">
+                        <h3 style="margin-bottom: 16px; font-size: 16px;">📈 月次予約率＆送信数推移</h3>
+                        <div class="chart-container">
+                            <canvas id="monthly-trend-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- 予約経路別割合ドーナツグラフ -->
+                    <div class="glass-card">
+                        <h3 style="margin-bottom: 16px; font-size: 16px;">🍕 予約チャネル割合</h3>
+                        <div class="chart-container">
+                            <canvas id="channel-ratio-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 配信回別 実績テーブル -->
+                <div class="glass-card" style="margin-top: 24px;">
+                    <h3 style="margin-bottom: 16px; font-size: 16px;">📋 配信回別 実績一覧</h3>
+                    <div class="table-responsive">
+                        <table id="delivery-table">
+                            <thead>
+                                <tr>
+                                    <th>配信日 (送信スケジュール)</th>
+                                    <th>カテゴリ</th>
+                                    <th>本部SMS送信数 (件)</th>
+                                    <th>店舗独自SMS (件)</th>
+                                    <th>SMS予約</th>
+                                    <th>LINE予約</th>
+                                    <th>EMo予約</th>
+                                    <th>総合予約率</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="8" style="text-align: center; color: var(--text-muted);">データをロード中...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: 店舗別分析ビュー -->
+            <div id="store-view" class="tab-content">
+                <div class="glass-card">
+                    <h3 style="margin-bottom: 8px; font-size: 16px;">🏬 店舗別 予約率ヒートマップ</h3>
+                    <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 20px;">
+                        期間内の各店舗の実績を一覧化し、予約率の高さに応じて自動的に色分けします。<br>
+                        ※緑＝優秀、黄＝平均的、赤＝対策が必要
+                    </p>
+                    
+                    <div class="table-responsive">
+                        <table id="store-heatmap-table">
+                            <thead>
+                                <tr>
+                                    <th>店舗名</th>
+                                    <th>エリア</th>
+                                    <th>本部SMS送信数 (件)</th>
+                                    <th>店舗独自SMS (件)</th>
+                                    <th>SMS予約</th>
+                                    <th>LINE予約</th>
+                                    <th>EMo予約</th>
+                                    <th>全体予約率</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="8" style="text-align: center; color: var(--text-muted);">フィルターを選択すると表示されます。</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 3: 店舗独自SMS管理ビュー (管理者専用) -->
+            <div id="store-sms-view" class="tab-content">
+                <div class="glass-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <div>
+                            <h3 style="font-size: 16px;">✉️ 店舗独自SMS配信数 登録・編集</h3>
+                            <p style="color: var(--text-muted); font-size: 12px;">「店舗独自SMS.xlsx」のデータをここに入力してSupabaseへ反映させます。</p>
+                        </div>
+                        <button class="btn btn-primary" onclick="saveStoreSmsGrid()">💾 変更を保存する</button>
+                    </div>
+
+                    <!-- 店舗SMS入力用のグリッドUI -->
+                    <div class="editable-grid-container">
+                        <table id="store-sms-grid-table">
+                            <thead>
+                                <tr>
+                                    <th>配信月 (YYYY-MM)</th>
+                                    <th>対象店舗 (SS名)</th>
+                                    <th>カテゴリ</th>
+                                    <th>店舗独自SMS送信数</th>
+                                </tr>
+                            </thead>
+                            <tbody id="store-sms-grid-body">
+                                <!-- JSで動的に入力セルを生成 -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="margin-top: 12px; display: flex; gap: 8px;">
+                        <button class="btn btn-secondary" onclick="addStoreSmsGridRow()">➕ 新しい行を追加</button>
+                        <button class="btn btn-secondary" onclick="loadStoreSmsGrid()">🔄 データを再読込</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 4: データ登録ビュー (管理者専用・PII除去インポート) -->
+            <div id="import-view" class="tab-content">
+                <div style="display: flex; flex-direction: column; gap: 24px;">
+                    
+                    <!-- PII保護ステータスカード -->
+                    <div class="pii-status-card" style="margin-bottom: 0;">
+                        <div class="pii-status-icon">🛡️</div>
+                        <div>
+                            <div class="pii-status-title">自動個人情報（PII）除去シールド稼働中</div>
+                            <div class="pii-status-desc">アップロードされるCSV内の氏名・電話番号・詳細住所などの個人情報は、ブラウザ内（メモリ上）で即座に完全破棄され、クラウド（Supabase）には安全な集計データと不可逆ハッシュ値のみが送信されます。データ漏洩リスクはゼロです。</div>
+                        </div>
+                    </div>
+
+                    <!-- 📲 SMS送信キャンペーン・スケジュール管理（グリッド編集） -->
+                    <div class="glass-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                            <div>
+                                <h3 style="font-size: 16px;">📲 SMS送信キャンペーン・スケジュール管理 (グリッド編集)</h3>
+                                <p style="color: var(--text-muted); font-size: 12px; margin-top: 4px;">スプレッドシート感覚で行を追加・編集し、右端の「CSVをアップロード」セルから直接送信結果CSVを読み込ませることができます。</p>
+                            </div>
+                            <div style="display: flex; gap: 8px;">
+                                <button class="btn btn-outline" style="padding: 8px 16px; font-size: 13px;" onclick="addCampaignGridRow()">➕ 配信月を追加</button>
+                                <button id="save-campaign-btn" class="btn btn-primary" style="padding: 8px 16px; font-size: 13px;" onclick="saveCampaignGrid()">💾 スケジュールの変更を保存</button>
+                            </div>
+                        </div>
+
+                        <!-- 隠しファイル入力要素 (グリッドのアップロードセル連携用) -->
+                        <input type="file" id="grid-file-input" style="display: none;" accept=".csv" onchange="handleGridFileChange(event)">
+
+                        <!-- 月別アコーディオンコンテナ (各アコーディオンの中にスプレッドシートテーブルが内包されます) -->
+                        <div id="campaign-accordion-container" style="max-height: 500px; overflow-y: auto; padding-right: 4px;">
+                            <!-- JavaScriptで動的に月別アコーディオン＆テーブルを描画 -->
+                        </div>
+                    </div>
+
+                    <!-- 下段: 成果入庫データインポート ＆ 監査コンソール -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+                        
+                        <!-- 成果入庫データのインポートカード -->
+                        <div class="glass-card" style="display: flex; flex-direction: column; gap: 16px;">
+                            <h3 style="font-size: 15px;">🚗 成果回収：入庫予約データCSVのインポート</h3>
+                            <p style="color: var(--text-muted); font-size: 12px; line-height: 1.6;">
+                                予約システムから出力された「入庫予約データ（nyuko）」のCSVを一括でアップロードします。<br>
+                                送信されたSMS結果と「受注ID (顧客車両ID)」のハッシュ一致による突合集計が行われます。
+                            </p>
+                            
+                            <div class="dropzone" id="nyuko-dropzone" onclick="document.getElementById('nyuko-file-input').click()">
+                                <div class="dropzone-icon">🚗</div>
+                                <div class="dropzone-text" id="nyuko-dropzone-prompt">入庫予約CSVファイルをここにドラッグ＆ドロップするか、クリックして選択</div>
+                                <div class="dropzone-subtext">Shift_JIS (cp932) または UTF-8 形式のCSVに対応</div>
+                                <input type="file" id="nyuko-file-input" style="display: none;" accept=".csv" onchange="handleNyukoFileSelect(event)">
+                            </div>
+                        </div>
+
+                        <!-- 処理コンソールログ -->
+                        <div class="glass-card" style="display: flex; flex-direction: column; gap: 12px;">
+                            <h3 style="font-size: 14px;">🖥️ インポートログ（コンソール）</h3>
+                            <div class="console-log" id="import-console" style="height: 180px;">コンソール待機中... グリッドの「配信結果」セルにCSVをドロップするか、右側の入庫予約CSVをドロップしてください。</div>
+                        </div>
+
+                    </div>
+
+                    <!-- 店舗マスタの一括管理 -->
+                    <div class="glass-card" style="margin-top: 24px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <h3 style="font-size: 14px;">🏬 店舗マスタ (SSコードとエリア対応)</h3>
+                            <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 11px;" onclick="loadStoresMaster()">🔄 再読込</button>
+                        </div>
+                        <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 12px;">新しい店舗が追加された場合や、エリアグループが変更になった場合はここで管理します。</p>
+                        <div class="editable-grid-container" style="max-height: 480px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px;">
+                            <table style="font-size: 12px;">
+                                <thead>
+                                    <tr>
+                                        <th>SSコード (主キー)</th>
+                                        <th>SS店舗名</th>
+                                        <th>所属エリア名</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="stores-master-body">
+                                    <!-- JSでロード -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+                            <div style="display: flex; gap: 8px;">
+                                <button class="btn btn-secondary" style="padding: 8px 16px; font-size: 12px;" onclick="addStoreMasterRow()">➕ 新しい店舗を追加</button>
+                                <button class="btn btn-secondary" style="padding: 8px 16px; font-size: 12px; background: rgba(59, 130, 246, 0.2); border-color: rgba(59, 130, 246, 0.4);" onclick="openStoreImportModal()">📥 2連CSVから一括インポート</button>
+                            </div>
+                            <button class="btn btn-primary" style="padding: 8px 16px; font-size: 12px;" onclick="saveStoresMaster()">💾 マスタの変更を保存</button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- TAB 5: 集計ルール（カテゴリマッピング）設定ビュー (管理者専用) -->
+            <div id="mapping-view" class="tab-content">
+                <div class="glass-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <div>
+                            <h3 style="font-size: 16px;">⚙️ 集計ルール設定（カテゴリマッピング）</h3>
+                            <p style="color: var(--text-muted); font-size: 12px;">配信したSMSカテゴリに対して、どの予約カテゴリを「成果」として認めるかの紐づけを設定します。</p>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 24px;">
+                        <!-- ルール一覧テーブル -->
+                        <div class="editable-grid-container" style="max-height: 400px;">
+                            <table id="mapping-table">
+                                <thead>
+                                    <tr>
+                                        <th>配信カテゴリ (SMS)</th>
+                                        <th>予約カテゴリ (作業グループ)</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="mapping-table-body">
+                                    <!-- JSで動的に構築 -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- ルール追加フォーム -->
+                        <div class="glass-card" style="background: rgba(15, 23, 42, 0.4); display: flex; flex-direction: column; gap: 16px;">
+                            <h4 style="font-size: 14px;">➕ 新しいルールの追加</h4>
+                            
+                            <div class="form-group">
+                                <label for="mapping-new-category">配信カテゴリ (SMS)</label>
+                                <select id="mapping-new-category">
+                                    <option value="オイル">オイル</option>
+                                    <option value="コーティング">コーティング</option>
+                                    <option value="洗車">洗車</option>
+                                    <option value="車検">車検</option>
+                                    <option value="点検">点検</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="mapping-new-workgroup">予約カテゴリ (作業グループ名)</label>
+                                <input type="text" id="mapping-new-workgroup" placeholder="例: 洗車, コーティング, 事前点検">
+                                <p style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">予約データの「作業グループ」列に部分一致する文字列を指定します。</p>
+                            </div>
+
+                            <button class="btn btn-primary" style="margin-top: 8px;" onclick="addMappingRule()">➕ ルールを追加して保存</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+        
+        <!-- フッター -->
+        <footer style="margin-top: 40px; text-align: center; padding: 24px 0; border-top: 1px solid var(--border-color); color: var(--text-muted); font-size: 12px;">
+            © 2026 ENEOSモビリニア 中国支店 SMS送信分析ダッシュボード v1.0.0
+        </footer>
+
+    </div>
+
+    <!-- 2.5. Supabase接続設定モーダル -->
+    <div id="setup-modal" class="auth-gate" style="display: none;">
+        <div class="glass-card auth-card" style="position: relative; max-width: 500px;">
+            <button onclick="closeSetupModal()" style="position: absolute; top: 16px; right: 16px; background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px;">✕</button>
+            <div class="auth-icon">⚙️</div>
+            <h2>Supabase 接続設定</h2>
+            <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 16px;">バックエンドのSupabaseデータベースと接続するための情報を入力してください。設定情報はブラウザ（LocalStorage）に安全に保存されます。</p>
+            <form id="setup-form" onsubmit="handleSaveSetup(event)">
+                <div class="form-group" style="margin-bottom: 12px; text-align: left;">
+                    <label for="setup-url" style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 12px;">Project URL (API URL)</label>
+                    <input type="url" id="setup-url" placeholder="https://xxxx.supabase.co" required style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(30, 41, 59, 0.5); color: var(--text-main);">
+                </div>
+                <div class="form-group" style="margin-bottom: 16px; text-align: left;">
+                    <label for="setup-anon-key" style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 12px;">API Anon Key</label>
+                    <textarea id="setup-anon-key" rows="4" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." required style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(30, 41, 59, 0.5); color: var(--text-main); font-family: monospace; font-size: 11px; resize: none; box-sizing: border-box;"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">💾 接続設定を保存・適用</button>
+                <button type="button" class="btn btn-secondary" style="width: 100%; margin-top: 8px; color: var(--danger); border-color: rgba(239, 68, 68, 0.2);" onclick="handleClearSetup()">❌ 設定をクリア（デモモードに戻す）</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 3. 管理者ログインモーダル -->
+    <div id="admin-modal" class="auth-gate" style="display: none;">
+        <div class="glass-card auth-card" style="position: relative;">
+            <button onclick="closeAdminModal()" style="position: absolute; top: 16px; right: 16px; background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px;">✕</button>
+            <div class="auth-icon">🔑</div>
+            <h2>管理者ログイン</h2>
+            <p style="color: var(--text-muted); font-size: 12px;">データの登録・店舗SMSの追加を行うには、Supabaseのアカウントでログインしてください。</p>
+            <form id="admin-login-form" onsubmit="handleAdminLogin(event)">
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <label for="admin-email">メールアドレス</label>
+                    <input type="email" id="admin-email" placeholder="admin@example.com" required>
+                </div>
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label for="admin-password">パスワード</label>
+                    <input type="password" id="admin-password" placeholder="パスワードを入力..." required>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">ログインする</button>
+                <p id="admin-error" style="color: var(--danger); font-size: 12px; margin-top: 8px; display: none;">ログインに失敗しました。メールアドレスまたはパスワードを確認してください。</p>
+            </form>
+        </div>
+    </div>
+
+    <!-- 4. カスタム確認ダイアログモーダル -->
+    <div id="confirm-modal" class="auth-gate" style="display: none; background: rgba(15, 23, 42, 0.85); z-index: 10001;">
+        <div class="glass-card auth-card" style="max-width: 450px; text-align: left; padding: 28px;">
+            <h3 id="confirm-title" style="font-size: 16px; margin-bottom: 12px; color: var(--text-main); display: flex; align-items: center; gap: 8px;">⚠️ 確認</h3>
+            <p id="confirm-message" style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 24px; white-space: normal;">メッセージ内容</p>
+            <div style="display: flex; justify-content: flex-end; gap: 12px;">
+                <button id="confirm-cancel-btn" class="btn btn-secondary" style="padding: 8px 16px; font-size: 12px;">キャンセル</button>
+                <button id="confirm-ok-btn" class="btn btn-danger" style="padding: 8px 16px; font-size: 12px;">実行する</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. トースト通知コンポーネント -->
+    <div id="toast" class="toast">
+        <span id="toast-icon">ℹ️</span>
+        <span id="toast-message">メッセージ</span>
+    </div>
+
+    <!-- 6. 店舗マスタ2連CSVインポートモーダル -->
+    <div id="store-import-modal" class="auth-gate" style="display: none;">
+        <div class="glass-card auth-card" style="position: relative; max-width: 500px; text-align: left;">
+            <button onclick="closeStoreImportModal()" style="position: absolute; top: 16px; right: 16px; background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px;">✕</button>
+            <div class="auth-icon">📥</div>
+            <h2>店舗マスタ 2連CSVインポート</h2>
+            <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 20px;">
+                エリアデータ（area）と所属データ（belong）の2つのCSVファイルを指定し、結合して店舗マスタに一括登録します。
+            </p>
+            <form id="store-import-form" onsubmit="handleStoreImportSubmit(event)">
+                <!-- ファイル1: エリアデータ -->
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 12px;">① エリアデータCSV (area_data_*.csv)</label>
+                    <input type="file" id="store-import-area-file" accept=".csv" required style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(30, 41, 59, 0.5); color: var(--text-main); font-size: 12px; box-sizing: border-box;">
+                </div>
+                <!-- ファイル2: 所属データ -->
+                <div class="form-group" style="margin-bottom: 24px;">
+                    <label style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 12px;">② 所属データCSV (belong_data_*.csv)</label>
+                    <input type="file" id="store-import-belong-file" accept=".csv" required style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(30, 41, 59, 0.5); color: var(--text-main); font-size: 12px; box-sizing: border-box;">
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">⚡ 2つのCSVを結合してインポート</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- アプリケーションロジックのインポート (Viteエントリーポイント) -->
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+# Excel & CSV (PII漏洩防止のため完全に除外)
+*.csv
+*.xlsx
+*.xls
+~$*
+*.tmp
+
+# データが入っている可能性のあるフォルダの除外
+SMS配信結果/
+入庫データ/
+DL/
+area_shop_csv/
+フォーマット/
+
+# 開発環境・システムファイル
+.vscode/
+node_modules/
+.DS_Store
+Thumbs.db
+*.code-workspace

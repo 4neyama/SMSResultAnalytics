@@ -1,0 +1,10 @@
+REF cols: 80
+TGT cols: 84
+
+=== Columns in TGT that MUST BE REMOVED (not in REF) ===
+  - お客様名
+  - ふりがな
+  - 連絡先電話番号（自宅）
+  - 連絡先電話番号（携帯）
+
+=== Columns in REF but not in TGT (missing) ===
