@@ -9,6 +9,8 @@ let isAdmin = false;
 let selectedFile = null;
 let activeUploadingCampaignId = null; // CSVアップロード中のキャンペーンIDを保持
 let isDataLoading = false; // 💡 二重ロード防止ロックフラグ
+let pendingUploadFile = null; // 💡 再ログイン自動再開用の保留ファイル
+let pendingUploadCampaignId = null; // 💡 再ログイン自動再開用の保留キャンペーンID
 
 // キャッシュデータ
 let storesCache = [];
@@ -300,6 +302,20 @@ async function handleAdminLogin(e) {
         closeAdminModal();
         showToast("🔑 管理者ログインに成功しました。", "success");
         await loadInitialData();
+
+        // 💡 ログイン成功に伴う、保留中CSVの自動アップロード再開処理
+        if (pendingUploadFile && pendingUploadCampaignId) {
+            logToConsole("🚀 再ログインに成功したため、保留されていたCSVインポートを自動再開します...");
+            const file = pendingUploadFile;
+            const campaignId = pendingUploadCampaignId;
+            
+            // 二重実行防止のために変数をクリア
+            pendingUploadFile = null;
+            pendingUploadCampaignId = null;
+            
+            // アップロードを自動再開
+            await processGridFile(file, campaignId);
+        }
     } catch (err) {
         console.error(err);
         document.getElementById('admin-error').style.display = 'block';
@@ -2867,7 +2883,13 @@ function handleGridDrop(e, id) {
 async function processGridFile(file, campaignId) {
     // 💡 セッション有効性チェック
     const isSessionValid = await checkAdminSession();
-    if (!isSessionValid) return;
+    if (!isSessionValid) {
+        // 再ログイン後に自動再開するため、ファイル情報を一時保持
+        pendingUploadFile = file;
+        pendingUploadCampaignId = campaignId;
+        logToConsole("⏳ 再ログイン後に自動でアップロードを再開するため、ファイルを一時保留しました。");
+        return;
+    }
 
     const consoleEl = document.getElementById('import-console');
     if (consoleEl) consoleEl.innerText = "";
