@@ -632,6 +632,7 @@ tr:hover td {
     border: 1px solid rgba(255, 255, 255, 0.1) !important; /* グリッド枠線 */
     padding: 4px 8px !important;
     vertical-align: middle;
+    white-space: nowrap; /* セル内の無駄な改行を防ぐ */
 }
 .spreadsheet-table tr:hover td {
     background: rgba(255, 255, 255, 0.04);
@@ -837,7 +838,22 @@ select option {
     50% { opacity: 1; }
 }
 
-
-
-
-
+/* スプレッドシート内の削除ボタン（線画ゴミ箱デザイン） */
+.btn-grid-delete {
+    background: transparent !important;
+    border: none !important;
+    color: var(--text-muted) !important;
+    cursor: pointer;
+    padding: 6px 12px;
+    border-radius: var(--border-radius-sm);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition-smooth);
+    height: 26px;
+    width: 36px;
+}
+.btn-grid-delete:hover {
+    color: #ef4444 !important; /* ホバー時に赤色 */
+    background: rgba(239, 68, 68, 0.15) !important;
+}
