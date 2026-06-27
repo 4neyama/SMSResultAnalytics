@@ -294,8 +294,20 @@ async function handleAdminLogout() {
         await supabaseClient.auth.signOut();
     }
     setAdminMode(false);
+    
+    // 💡 ログアウト時にキャッシュメモリを完全にリセットし、ゴースト表示を防ぐ
+    storesCache = [];
+    campaignsCache = [];
+    smsDeliveriesCache = [];
+    reservationsCache = [];
+    storeOwnSmsCache = [];
+    categoryMappingsCache = [];
+    
     showToast("🔒 ログアウトしました。", "success");
     switchTab('dashboard-view');
+    
+    // キャッシュ無効化されたクリーンな初期状態を再ロード
+    await loadInitialData();
 }
 
 // 管理者UI表示の切り替え
@@ -321,39 +333,59 @@ async function loadInitialData(skipDeliveries = false) {
     if (!supabaseClient) return;
 
     try {
+        // 💡 ブラウザが file:// や localhost 環境で API レスポンスを強制キャッシュし、
+        // データの不整合を起こすのを防ぐため、全クエリに動的UUIDによるキャッシュ破壊フィルタを適用
+        
         // 店舗マスタのロード
-        const { data: stores, error: err1 } = await supabaseClient.from('stores').select('*').order('store_name');
+        const { data: stores, error: err1 } = await supabaseClient
+            .from('stores')
+            .select('*')
+            .neq('store_code', 'dummy_' + generateUUID())
+            .order('store_name');
         if (err1) throw err1;
         storesCache = stores;
 
         // 配信キャンペーンのロード
-        const { data: campaigns, error: errCamp } = await supabaseClient.from('campaigns').select('*').order('delivery_date', { ascending: false });
+        const { data: campaigns, error: errCamp } = await supabaseClient
+            .from('campaigns')
+            .select('*')
+            .neq('id', generateUUID())
+            .order('delivery_date', { ascending: false });
         if (errCamp) throw errCamp;
         campaignsCache = campaigns;
         initializeDrawMonths();
 
-        // 配信実績のロード
+        // 配信実績のロード (ランダムUUIDでキャッシュを完全破壊)
         if (!skipDeliveries) {
             const { data: deliveries, error: err2 } = await supabaseClient
                 .from('sms_deliveries')
                 .select('*')
-                .neq('id', '00000000-0000-0000-0000-000000000000'); // キャッシュ回避用のダミーフィルタ追加
+                .neq('id', generateUUID());
             if (err2) throw err2;
             smsDeliveriesCache = deliveries;
         }
 
         // 予約実績のロード
-        const { data: reservations, error: err3 } = await supabaseClient.from('reservations').select('*');
+        const { data: reservations, error: err3 } = await supabaseClient
+            .from('reservations')
+            .select('*')
+            .neq('id', generateUUID());
         if (err3) throw err3;
         reservationsCache = reservations;
 
         // 店舗独自SMSのロード
-        const { data: storeSms, error: err4 } = await supabaseClient.from('store_own_sms').select('*');
+        const { data: storeSms, error: err4 } = await supabaseClient
+            .from('store_own_sms')
+            .select('*')
+            .neq('id', generateUUID());
         if (err4) throw err4;
         storeOwnSmsCache = storeSms;
 
         // 集計ルールのロード
-        const { data: mappings, error: errMap } = await supabaseClient.from('category_mappings').select('*');
+        const { data: mappings, error: errMap } = await supabaseClient
+            .from('category_mappings')
+            .select('*')
+            .neq('id', generateUUID());
         if (errMap) throw errMap;
         categoryMappingsCache = mappings;
 
@@ -369,19 +401,17 @@ async function loadInitialData(skipDeliveries = false) {
         // 🔍 データベースと実績データの整合性チェック
         await debugPrintDatabaseState();
         
-        // 🔍 デバッグ：オイル1およびオイル2に紐づく全データをダンプ
-        const oil1Dels = smsDeliveriesCache.filter(d => d.campaign_id === 'd7d05b52-3e6e-4ac1-9755-f789097c2297');
-        logToConsole(`🔍 [デバッグ] キャッシュ上のオイル1の実績数: ${oil1Dels.length} 件`);
-        if (oil1Dels.length > 0) {
-            logToConsole(`   サンプル最初3件: ${JSON.stringify(oil1Dels.slice(0, 3))}`);
-            logToConsole(`   サンプル最後3件: ${JSON.stringify(oil1Dels.slice(-3))}`);
-        }
+        // 🔍 デバッグ：実際のオイル1およびオイル2の現在のIDに紐づくデータをダンプ
+        const realOil1 = campaignsCache.find(c => c.campaign_name && c.campaign_name.includes("オイル1"));
+        const realOil2 = campaignsCache.find(c => c.campaign_name && c.campaign_name.includes("オイル2"));
         
-        const oil2Dels = smsDeliveriesCache.filter(d => d.campaign_id === '264d6b22-fee2-48f3-8158-b2dec647ac19');
-        logToConsole(`🔍 [デバッグ] キャッシュ上のオイル2の実績数: ${oil2Dels.length} 件`);
-        if (oil2Dels.length > 0) {
-            logToConsole(`   サンプル最初3件: ${JSON.stringify(oil2Dels.slice(0, 3))}`);
-            logToConsole(`   サンプル最後3件: ${JSON.stringify(oil2Dels.slice(-3))}`);
+        if (realOil1) {
+            const oil1Dels = smsDeliveriesCache.filter(d => d.campaign_id === realOil1.id);
+            logToConsole(`🔍 [デバッグ] キャッシュ上のオイル1 (${realOil1.campaign_name}) の実績数: ${oil1Dels.length} 件`);
+        }
+        if (realOil2) {
+            const oil2Dels = smsDeliveriesCache.filter(d => d.campaign_id === realOil2.id);
+            logToConsole(`🔍 [デバッグ] キャッシュ上のオイル2 (${realOil2.campaign_name}) の実績数: ${oil2Dels.length} 件`);
         }
 
         showToast("🔄 最新データをロードしました。", "success");
