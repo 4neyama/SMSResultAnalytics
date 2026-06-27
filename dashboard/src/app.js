@@ -20,6 +20,43 @@ let reservationsCache = [];
 let storeOwnSmsCache = [];
 let categoryMappingsCache = [];
 
+// 💡 静的補完マッピング辞書（店舗名 -> SSコード）
+const MASTER_STORE_NAME_TO_SS_CODE = {
+    "羽島": "8003022",
+    "広江": "1015874",
+    "中仙道": "1016005",
+    "箕島": "3726288",
+    "野田": "1015965",
+    "岡山ネオポリス": "1015767",
+    "東岡山": "8001877",
+    "柳川セントラル": "1015833",
+    "水島インター": "1016039",
+    "西大寺金岡": "1015783",
+    "神崎": "1015791",
+    "田井ポート": "1015957",
+    "総社": "8002974",
+    "藤田": "1016047",
+    "吉備路": "1015841",
+    "西大寺": "8002594",
+    "富田": "1015973",
+    "中筋": "8104622",
+    "新涯": "1016153",
+    "焼山": "1016229",
+    "西条中央": "1016252",
+    "鴨方インター": "1016278",
+    "新伊勢丘": "3726304",
+    "中央": "8103657",
+    "矢野": "8103152",
+    "亀山": "8103293",
+    "安佐北": "8104481",
+    "せとうち尾道": "1016179",
+    "早島インター": "1015858",
+    "黒瀬": "1016203",
+    "周南": "7015944",
+    "吉見園": "7019664",
+    "沼田": "7020480"
+};
+
 // チャートのインスタンス
 let monthlyTrendChart = null;
 let channelRatioChart = null;
@@ -98,6 +135,15 @@ function generateUUID() {
     });
 }
 
+
+// あいまい店舗名マッチングのクリーンアップヘルパー
+function cleanStr(str) {
+    return String(str).toLowerCase()
+        .replace(/[\s　]+/g, '')          // スペース除去
+        .replace(/セルフ/g, '')           // 「セルフ」除去
+        .replace(/dr\.drive|dr\-|dd/g, '') // 「Dr.Drive」「DD」など除去
+        .replace(/店$/g, '');             // 末尾の「店」除去
+}
 
 // インポートログ用コンソール出力関数
 function logToConsole(message) {
@@ -1254,6 +1300,7 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
             if (!hasUnknown) {
                 const unknownStore = {
                     store_code: 'unknown',
+                    ss_code: 'unknown',
                     store_name: '不明な店舗',
                     area_name: '不明'
                 };
@@ -1354,16 +1401,24 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
             // 4. DB適合整形
             if (type === 'haishin') {
                 const csvStoreName = newRow["店舗名"] || newRow["店舗"] || "";
-                const csvStoreCode = newRow["発券SSコード"] || newRow["SSコード"] || "";
-                let matchedStoreCode = csvStoreCode.trim();
+                const csvStoreCode = (newRow["発券SSコード"] || newRow["SSコード"] || "").trim();
+                let matchedStoreCode = "";
 
-                // コードが直接渡されていないか、マスタに存在しない場合、店舗名からあいまい検索を試みる
-                if ((!matchedStoreCode || !storesCache.some(s => s.store_code === matchedStoreCode)) && csvStoreName) {
+                // 1. SSコード(ss_code)から店舗マスタ上の店舗ID(store_code)を検索
+                if (csvStoreCode) {
+                    const store = storesCache.find(s => s.ss_code === csvStoreCode);
+                    if (store) {
+                        matchedStoreCode = store.store_code;
+                    }
+                }
+
+                // 2. 見つからず店舗名がある場合、店舗名からあいまい検索を試みる
+                if (!matchedStoreCode && csvStoreName) {
                     const cleanedCsv = cleanStr(csvStoreName);
                     if (cleanedCsv) {
                         // 1. クリーン後の完全一致
                         let matchedStore = storesCache.find(s => cleanStr(s.store_name) === cleanedCsv);
-                        // 2. 部分一致 (マスタ店名がCSV名を含む、またはその逆)
+                        // 2. 部分一致
                         if (!matchedStore) {
                             matchedStore = storesCache.find(s => {
                                 const cleanedMaster = cleanStr(s.store_name);
@@ -1376,8 +1431,16 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
                     }
                 }
 
-                // マスタに合致するコードがない場合、警告をログに蓄積
-                if (!matchedStoreCode || !storesCache.some(s => s.store_code === matchedStoreCode)) {
+                // 3. 予備的に直接店舗ID(store_code)に一致するものがあるか確認
+                if (!matchedStoreCode && csvStoreCode) {
+                    const store = storesCache.find(s => s.store_code === csvStoreCode);
+                    if (store) {
+                        matchedStoreCode = store.store_code;
+                    }
+                }
+
+                // マスタに合致するコードがない場合、警告をログに蓄積して 'unknown' に
+                if (!matchedStoreCode) {
                     warningLogs.push(`⚠️ 警告: レコード #${idx+1} の店舗名「${csvStoreName || '未指定'}」(CSVコード:「${csvStoreCode || '未指定'}」) は店舗マスタに適合しません。コード「unknown」として処理されます。`);
                     matchedStoreCode = "unknown";
                 }
@@ -1389,12 +1452,40 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
                     sms_count: parseInt(newRow["通数"]) || 1
                 };
             } else {
+                const csvStoreName = newRow["予約受付店舗"] || "";
                 const csvStoreCode = (newRow["予約受付店舗ID"] || "").trim();
-                let matchedStoreCode = csvStoreCode;
+                let matchedStoreCode = "";
 
-                // コードが直接渡されていないか、マスタに存在しない場合、'unknown' に補正して警告を蓄積
-                if (!matchedStoreCode || !storesCache.some(s => s.store_code === matchedStoreCode)) {
-                    warningLogs.push(`⚠️ 警告: レコード #${idx+1} の予約受付店舗ID「${csvStoreCode || '未指定'}」は店舗マスタに適合しません。コード「unknown」として処理されます。`);
+                // 1. 店舗ID(store_code)から店舗マスタを直接検索
+                if (csvStoreCode) {
+                    const store = storesCache.find(s => s.store_code === csvStoreCode);
+                    if (store) {
+                        matchedStoreCode = store.store_code;
+                    }
+                }
+
+                // 2. 見つからない場合、店舗名からあいまい検索を試みる
+                if (!matchedStoreCode && csvStoreName) {
+                    const cleanedCsv = cleanStr(csvStoreName);
+                    if (cleanedCsv) {
+                        // 1. クリーン後の完全一致
+                        let matchedStore = storesCache.find(s => cleanStr(s.store_name) === cleanedCsv);
+                        // 2. 部分一致
+                        if (!matchedStore) {
+                            matchedStore = storesCache.find(s => {
+                                const cleanedMaster = cleanStr(s.store_name);
+                                return cleanedMaster.includes(cleanedCsv) || cleanedCsv.includes(cleanedMaster);
+                            });
+                        }
+                        if (matchedStore) {
+                            matchedStoreCode = matchedStore.store_code;
+                        }
+                    }
+                }
+
+                // それでも一致しない場合は警告を出して 'unknown' に
+                if (!matchedStoreCode) {
+                    warningLogs.push(`⚠️ 警告: レコード #${idx+1} の店舗名「${csvStoreName || '未指定'}」(CSVコード:「${csvStoreCode || '未指定'}」) は店舗マスタに適合しません。コード「unknown」として処理されます。`);
                     matchedStoreCode = "unknown";
                 }
 
@@ -1665,17 +1756,31 @@ async function handleStoreImportSubmit(e) {
         });
 
         // 2. 所属データとマージして保存用配列を作成
+        // 💡 データの体系見直しにより、store_code には「店舗ID（id）」を保存し、新たに「ss_code」カラムにSSコードを保存します。
         const updates = [];
         belongData.forEach(row => {
-            // ss_codeが空の場合はidを店舗コードとしてフォールバック
-            const code = String(row["ss_code"] || row["id"] || "").trim();
+            const storeId = String(row["id"] || "").trim(); // 店舗ID
             const name = String(row["name"] || "").trim();
             const areaId = String(row["nskn_area_id"] || "").trim();
             const areaName = areaMap[areaId] || "その他";
 
-            if (code && name) {
+            let ssCode = String(row["ss_code"] || "").trim();
+            
+            // 💡 所属CSVの ss_code が空の場合、店舗名から辞書引きしてSSコードを補完する
+            if (!ssCode && name) {
+                const cleanedName = cleanStr(name);
+                const matchedKey = Object.keys(MASTER_STORE_NAME_TO_SS_CODE).find(key => 
+                    cleanedName.includes(cleanStr(key)) || cleanStr(key).includes(cleanedName)
+                );
+                if (matchedKey) {
+                    ssCode = MASTER_STORE_NAME_TO_SS_CODE[matchedKey];
+                }
+            }
+
+            if (storeId && name) {
                 updates.push({
-                    store_code: code,
+                    store_code: storeId, // 店舗IDを主キー（store_code）に設定
+                    ss_code: ssCode || null, // SSコードを追加
                     store_name: name,
                     area_name: areaName
                 });

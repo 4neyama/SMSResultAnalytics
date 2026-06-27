@@ -5,8 +5,9 @@
 
 -- 1. 店舗マスタテーブルの作成
 CREATE TABLE IF NOT EXISTS stores (
-    store_code VARCHAR(50) PRIMARY KEY,       -- SSコード
-    store_name VARCHAR(100) NOT NULL,          -- SS名
+    store_code VARCHAR(50) PRIMARY KEY,       -- 店舗ID (nskn店舗ID)
+    ss_code VARCHAR(50),                      -- SSコード (7桁)
+    store_name VARCHAR(100) NOT NULL,          -- 店舗名
     area_name VARCHAR(50) NOT NULL,            -- エリア名 (例: 中国1G)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
@@ -83,8 +84,8 @@ INSERT INTO category_mappings (category, work_group) VALUES
 ON CONFLICT (category, work_group) DO NOTHING;
 
 -- 8.1. 不明店舗 (unknown) の登録
-INSERT INTO stores (store_code, store_name, area_name) VALUES
-('unknown', '不明な店舗', '不明')
+INSERT INTO stores (store_code, ss_code, store_name, area_name) VALUES
+('unknown', 'unknown', '不明な店舗', '不明')
 ON CONFLICT (store_code) DO NOTHING;
 
 -- 8. インデックスの作成
