@@ -193,6 +193,24 @@ async function initSupabase() {
     }
 }
 
+// 管理者セッションが有効かどうかをチェックするヘルパー関数
+async function checkAdminSession() {
+    if (!supabaseClient) return true; // オフラインデモ時は常にスルー
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) {
+            showToast("⚠️ セッションの有効期限が切れました。再度ログインしてください。", "warning");
+            logToConsole("⚠️ エラー: 管理者セッションが無効です。再ログインが必要です。");
+            openAdminModal(); // 💡 自動的に管理者ログイン画面を表示
+            return false;
+        }
+        return true;
+    } catch (e) {
+        console.error("セッションチェックエラー:", e);
+        return false;
+    }
+}
+
 // 設定が未完了である場合のローカル仮設定UI
 function showSetupRequiredMessage() {
     handleSetupRequired();
@@ -2556,6 +2574,10 @@ function addCampaignGridRow() {
 
 // スケジュール行の削除
 async function deleteCampaignGridRow(id) {
+    // 💡 セッション有効性チェック
+    const isSessionValid = await checkAdminSession();
+    if (!isSessionValid) return;
+
     const campaign = campaignsCache.find(c => String(c.id) === String(id));
     const displayName = campaign?.campaign_name || "この配信スケジュール";
     
@@ -2589,6 +2611,10 @@ async function deleteCampaignGridRow(id) {
 
 // アップロードされた配信結果（子レコード）のみを削除する機能
 async function deleteCampaignDeliveries(campaignId) {
+    // 💡 セッション有効性チェック
+    const isSessionValid = await checkAdminSession();
+    if (!isSessionValid) return;
+
     const campaign = campaignsCache.find(c => String(c.id) === String(campaignId));
     const displayName = campaign?.campaign_name || "この配信";
     
@@ -2625,6 +2651,10 @@ async function deleteCampaignDeliveries(campaignId) {
 
 // スケジュールグリッドの一括保存 (isSilent = true の場合はUIの表示・トーストを変更せずに静かに実行)
 async function saveCampaignGrid(isSilent = false) {
+    // 💡 セッション有効性チェック
+    const isSessionValid = await checkAdminSession();
+    if (!isSessionValid) return;
+
     const btn = document.getElementById('save-campaign-btn');
     const originalText = btn ? btn.innerHTML : "💾 編集内容を保存";
     const originalBg = btn ? btn.style.background : "";
@@ -2835,6 +2865,10 @@ function handleGridDrop(e, id) {
 
 // グリッドCSVのパース・インポート
 async function processGridFile(file, campaignId) {
+    // 💡 セッション有効性チェック
+    const isSessionValid = await checkAdminSession();
+    if (!isSessionValid) return;
+
     const consoleEl = document.getElementById('import-console');
     if (consoleEl) consoleEl.innerText = "";
 
