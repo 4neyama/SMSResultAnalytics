@@ -33,7 +33,6 @@ CHUNK_SIZE = 1000
 # 削除対象となる個人情報（PII）列
 COLUMNS_TO_REMOVE = [
     "携帯電話番号", "自宅電話番号", "顧客名", "フリガナ",
-    "ナンバー（陸事）", "ナンバー（種別）", "ナンバー（かな）", "ナンバー（車番）",
     "email", "住所", "郵便番号", "担当者",
     "コメント", "備考", "メモ", "連絡事項", "備考欄", "その他"
 ]
@@ -357,11 +356,22 @@ def process_csv_file(filepath, campaign_id, stores_list):
                 except ValueError:
                     pass
                     
+            # ナンバープレート情報（車両ナンバー）の抽出と結合
+            car_land = (row.get("ナンバー（陸事）") or "").strip()
+            car_class = (row.get("ナンバー（種別）") or "").strip()
+            car_kana = (row.get("ナンバー（かな）") or "").strip()
+            car_num = (row.get("ナンバー（車番）") or "").strip()
+            
+            car_number = None
+            if car_land or car_class or car_kana or car_num:
+                car_number = f"{car_land}{car_class}{car_kana}{car_num}"
+
             records.append({
                 "campaign_id": campaign_id,
                 "store_code": matched_code,
                 "hashed_customer_id": hashed_id,
-                "sms_count": sms_count
+                "sms_count": sms_count,
+                "car_number": car_number
             })
             
     return records

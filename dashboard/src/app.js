@@ -21,6 +21,43 @@ let reservationsListCache = [];
 let storeOwnSmsCache = [];
 let categoryMappingsCache = [];
 
+let currentAggregationBase = 'booking_date'; // 'booking_date' または 'visit_datetime'
+
+function setAggregationBase(base) {
+    if (base !== 'booking_date' && base !== 'visit_datetime') return;
+    currentAggregationBase = base;
+
+    const btnBooking = document.getElementById('toggle-base-booking');
+    const btnVisit = document.getElementById('toggle-base-visit');
+    
+    if (btnBooking && btnVisit) {
+        if (base === 'booking_date') {
+            btnBooking.classList.add('active');
+            btnBooking.style.background = 'linear-gradient(135deg, #3b82f6, #2563eb)';
+            btnBooking.style.color = '#ffffff';
+            btnBooking.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
+
+            btnVisit.classList.remove('active');
+            btnVisit.style.background = 'transparent';
+            btnVisit.style.color = 'var(--text-muted)';
+            btnVisit.style.boxShadow = 'none';
+        } else {
+            btnVisit.classList.add('active');
+            btnVisit.style.background = 'linear-gradient(135deg, #3b82f6, #2563eb)';
+            btnVisit.style.color = '#ffffff';
+            btnVisit.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
+
+            btnBooking.classList.remove('active');
+            btnBooking.style.background = 'transparent';
+            btnBooking.style.color = 'var(--text-muted)';
+            btnBooking.style.boxShadow = 'none';
+        }
+    }
+
+    logToConsole(`🔄 集計基準日を「${base === 'booking_date' ? '予約受付日' : 'お客様来店日'}」に切り替えました。再集計します...`, "nyuko");
+    loadAllData();
+}
+
 // 💡 静的補完マッピング辞書（店舗名 -> SSコード）
 const MASTER_STORE_NAME_TO_SS_CODE = {
     "羽島": "8003022",
@@ -915,11 +952,13 @@ function loadAllData() {
     let filteredReservations = reservationsCache.filter(r => targetStoreCodesList.includes(r.store_code));
     // 予約ステータスが本予約または予約確認済みのものを「確定した予約」とする
     filteredReservations = filteredReservations.filter(r => r.status === '本予約' || r.status === '予約確認済み');
+    
+    const dateField = currentAggregationBase; // 'booking_date' または 'visit_datetime'
     if (startMonth) {
-        filteredReservations = filteredReservations.filter(r => r.reception_date && r.reception_date.substring(0, 7) >= startMonth);
+        filteredReservations = filteredReservations.filter(r => r[dateField] && r[dateField].substring(0, 7) >= startMonth);
     }
     if (endMonth) {
-        filteredReservations = filteredReservations.filter(r => r.reception_date && r.reception_date.substring(0, 7) <= endMonth);
+        filteredReservations = filteredReservations.filter(r => r[dateField] && r[dateField].substring(0, 7) <= endMonth);
     }
 
     // 4. 店舗独自SMS絞り込み
@@ -1398,7 +1437,6 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
         // 削除対象列の定義 (平文で個人情報が混入するリスクの高い項目およびフリーテキスト欄)
         const columnsToRemoveHaishin = [
             "携帯電話番号", "自宅電話番号", "顧客名", "フリガナ",
-            "ナンバー（陸事）", "ナンバー（種別）", "ナンバー（かな）", "ナンバー（車番）",
             "email", "住所", "郵便番号", "担当者",
             "コメント", "備考", "メモ", "連絡事項", "備考欄", "その他"
         ];
@@ -1523,11 +1561,23 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
                     matchedStoreCode = "unknown";
                 }
 
+                // ナンバープレート情報（車両ナンバー）の抽出と結合
+                const carLand = (row["ナンバー（陸事）"] || "").trim();
+                const carClass = (row["ナンバー（種別）"] || "").trim();
+                const carKana = (row["ナンバー（かな）"] || "").trim();
+                const carNum = (row["ナンバー（車番）"] || "").trim();
+                
+                let carNumber = null;
+                if (carLand || carClass || carKana || carNum) {
+                    carNumber = `${carLand}${carClass}${carKana}${carNum}`;
+                }
+
                 return {
                     campaign_id: campaignId,
                     store_code: matchedStoreCode,
                     hashed_customer_id: newRow["hashed_customer_id"],
-                    sms_count: parseInt(newRow["通数"]) || 1
+                    sms_count: parseInt(newRow["通数"]) || 1,
+                    car_number: carNumber
                 };
             } else {
                 const csvStoreName = newRow["予約受付店舗"] || "";
@@ -1567,15 +1617,46 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
                     matchedStoreCode = "unknown";
                 }
 
+                const parseDateStr = (str) => {
+                    if (!str || !str.trim()) return null;
+                    return str.trim().replace(/\//g, '-');
+                };
+
+                const parseDatetimeStr = (str) => {
+                    if (!str || !str.trim()) return null;
+                    const clean = str.trim();
+                    if (clean.length <= 10 && (clean.includes('/') || clean.includes('-'))) {
+                        return `${clean.replace(/\//g, '-')}T00:00:00+09:00`;
+                    }
+                    let iso = clean.replace(/\//g, '-');
+                    if (iso.includes(' ')) {
+                        iso = iso.replace(' ', 'T');
+                    }
+                    if (iso.includes('T') && iso.split('T')[1].split(':').length === 2) {
+                        iso += ':00';
+                    }
+                    if (!iso.includes('+') && !iso.endsWith('Z')) {
+                        iso += '+09:00';
+                    }
+                    return iso;
+                };
+
                 return {
-                    reservation_id: newRow["予約ID"],
-                    reception_date: newRow["受付日"],
-                    work_group: newRow["作業グループ"],
+                    reservation_id: newRow["予約ID"] || null,
+                    booking_date: parseDateStr(newRow["受付日"]),
+                    visit_datetime: parseDatetimeStr(newRow["お客様来店日時"]),
+                    pit_reservation_datetime: parseDatetimeStr(newRow["工場予約日時"]),
+                    car_number: newRow["車両ナンバー"] || null,
+                    work_group: newRow["作業グループ"] || null,
                     store_code: matchedStoreCode,
-                    hashed_customer_id: newRow["hashed_customer_id"],
-                    route: newRow["予約経路"],
-                    route_store: newRow["予約経路_店頭入力用"],
-                    status: newRow["ステータス"]
+                    hashed_customer_id: newRow["hashed_customer_id"] || null,
+                    route: newRow["予約経路"] || null,
+                    route_store: newRow["予約経路_店頭入力用"] || null,
+                    status: newRow["ステータス"] || null,
+                    gnote_created_at: parseDatetimeStr(newRow["登録日"]),
+                    gnote_updated_at: parseDatetimeStr(newRow["更新日"]),
+                    gnote_created_by: newRow["登録者"] || null,
+                    gnote_updated_by: newRow["更新者"] || null
                 };
             }
         });
@@ -1740,7 +1821,7 @@ async function loadReservationsList() {
     // ロード中表示
     const tbody = document.getElementById('reservation-list-body');
     if (tbody) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">データを読み込んでいます...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;">データを読み込んでいます...</td></tr>';
     }
 
     try {
@@ -1753,20 +1834,28 @@ async function loadReservationsList() {
         const route = document.getElementById('filter-res-route')?.value;
         const rescheduledOnly = document.getElementById('filter-res-rescheduled-only')?.checked;
 
+        const dateColumn = currentAggregationBase; // 'booking_date' または 'visit_datetime'
+
         // クエリの作成
         let query = supabaseClient
             .from('reservations')
             .select(`
                 id,
                 reservation_id,
-                reception_date,
-                previous_reception_date,
+                booking_date,
+                visit_datetime,
+                previous_visit_datetime,
+                pit_reservation_datetime,
                 work_group,
                 store_code,
                 hashed_customer_id,
                 route,
                 route_store,
                 status,
+                gnote_created_at,
+                gnote_updated_at,
+                gnote_created_by,
+                gnote_updated_by,
                 created_at,
                 updated_at,
                 stores (
@@ -1776,13 +1865,13 @@ async function loadReservationsList() {
 
         // フィルター条件の適用
         if (startMonth) {
-            query = query.gte('reception_date', `${startMonth}-01`);
+            query = query.gte(dateColumn, `${startMonth}-01`);
         }
         if (endMonth) {
             const parts = endMonth.split('-');
             const nextM = parseInt(parts[1]) + 1;
             const nextMonthStr = nextM > 12 ? `${parseInt(parts[0]) + 1}-01` : `${parts[0]}-${String(nextM).padStart(2, '0')}`;
-            query = query.lt('reception_date', `${nextMonthStr}-01`);
+            query = query.lt(dateColumn, `${nextMonthStr}-01`);
         }
         if (storeCode && storeCode !== 'all') {
             query = query.eq('store_code', storeCode);
@@ -1791,7 +1880,7 @@ async function loadReservationsList() {
             query = query.eq('route', route);
         }
         if (rescheduledOnly) {
-            query = query.not('previous_reception_date', 'is', null);
+            query = query.not('previous_visit_datetime', 'is', null);
         }
 
         // ソート順と件数制限 (最新1000件のみ)
@@ -1832,66 +1921,33 @@ async function updateMonthlySummary() {
     const route = document.getElementById('filter-res-route')?.value;
     const rescheduledOnly = document.getElementById('filter-res-rescheduled-only')?.checked;
 
-    let monthlyData = [];
+    // オンライン時は明細キャッシュ、オフライン時はデモ用キャッシュを使用
+    const targetList = supabaseClient ? reservationsListCache : reservationsCache;
 
-    if (supabaseClient) {
-        try {
-            // ビューからデータを取得
-            let query = supabaseClient.from('monthly_reservation_summary').select('*');
-            if (storeCode && storeCode !== 'all') {
-                query = query.eq('store_code', storeCode);
-            }
-            if (route && route !== 'all') {
-                query = query.eq('route', route);
-            }
-            if (rescheduledOnly) {
-                query = query.eq('rescheduled', true);
-            }
-
-            const { data, error } = await query;
-            if (error) throw error;
-
-            // 月ごとに集計をマージ
-            const summaryMap = {};
-            (data || []).forEach(row => {
-                const m = row.month;
-                const c = parseInt(row.count) || 0;
-                summaryMap[m] = (summaryMap[m] || 0) + c;
-            });
-
-            // キー（月）でソート（降順）
-            monthlyData = Object.entries(summaryMap).map(([month, count]) => ({ month, count }))
-                .sort((a, b) => b.month.localeCompare(a.month));
-
-        } catch (err) {
-            console.error("月別サマリーの取得失敗:", err);
-            listContainer.innerHTML = `<span style="color: var(--danger); font-size: 12px;">⚠️ サマリーの取得に失敗しました: ${err.message || err}</span>`;
-            return;
-        }
-    } else {
-        // デモモード：ローカルキャッシュから集計
-        let filtered = [...reservationsCache];
-        if (storeCode && storeCode !== 'all') {
-            filtered = filtered.filter(r => r.store_code === storeCode);
-        }
-        if (route && route !== 'all') {
-            filtered = filtered.filter(r => r.route === route);
-        }
-        if (rescheduledOnly) {
-            filtered = filtered.filter(r => r.previous_reception_date !== null && r.previous_reception_date !== undefined);
-        }
-
-        const summaryMap = {};
-        filtered.forEach(r => {
-            if (r.reception_date) {
-                const m = r.reception_date.substring(0, 7); // YYYY-MM
-                summaryMap[m] = (summaryMap[m] || 0) + 1;
-            }
-        });
-
-        monthlyData = Object.entries(summaryMap).map(([month, count]) => ({ month, count }))
-            .sort((a, b) => b.month.localeCompare(a.month));
+    let filtered = [...targetList];
+    if (storeCode && storeCode !== 'all') {
+        filtered = filtered.filter(r => r.store_code === storeCode);
     }
+    if (route && route !== 'all') {
+        filtered = filtered.filter(r => r.route === route);
+    }
+    if (rescheduledOnly) {
+        filtered = filtered.filter(r => r.previous_visit_datetime);
+    }
+
+    const summaryMap = {};
+    const dateField = currentAggregationBase; // 'booking_date' または 'visit_datetime'
+
+    filtered.forEach(r => {
+        const val = r[dateField];
+        if (val) {
+            const m = val.substring(0, 7); // YYYY-MM
+            summaryMap[m] = (summaryMap[m] || 0) + 1;
+        }
+    });
+
+    const monthlyData = Object.entries(summaryMap).map(([month, count]) => ({ month, count }))
+        .sort((a, b) => b.month.localeCompare(a.month));
 
     // 描画
     if (monthlyData.length === 0) {
@@ -1999,6 +2055,28 @@ function buildReservationStoreFilter() {
     select.value = curVal;
 }
 
+// 日時フォーマット用のヘルパー
+function formatDatetimeJst(isoString, includeTime = true) {
+    if (!isoString) return '-';
+    try {
+        const d = new Date(isoString);
+        if (isNaN(d.getTime())) return isoString;
+        
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const dateStr = String(d.getDate()).padStart(2, '0');
+        
+        if (includeTime) {
+            const h = String(d.getHours()).padStart(2, '0');
+            const min = String(d.getMinutes()).padStart(2, '0');
+            return `${y}/${m}/${dateStr} ${h}:${min}`;
+        }
+        return `${y}/${m}/${dateStr}`;
+    } catch (e) {
+        return isoString;
+    }
+}
+
 // 明細データの描画
 function renderReservationGrid() {
     const tbody = document.getElementById('reservation-list-body');
@@ -2019,14 +2097,13 @@ function renderReservationGrid() {
 
         displayData = [...reservationsCache];
 
+        const dateField = currentAggregationBase; // 'booking_date' または 'visit_datetime'
+
         if (startMonth) {
-            displayData = displayData.filter(r => r.reception_date >= `${startMonth}-01`);
+            displayData = displayData.filter(r => r[dateField] && r[dateField].substring(0, 7) >= startMonth);
         }
         if (endMonth) {
-            const parts = endMonth.split('-');
-            const nextM = parseInt(parts[1]) + 1;
-            const nextMonthStr = nextM > 12 ? `${parseInt(parts[0]) + 1}-01` : `${parts[0]}-${String(nextM).padStart(2, '0')}`;
-            displayData = displayData.filter(r => r.reception_date < `${nextMonthStr}-01`);
+            displayData = displayData.filter(r => r[dateField] && r[dateField].substring(0, 7) <= endMonth);
         }
         if (storeCode && storeCode !== 'all') {
             displayData = displayData.filter(r => r.store_code === storeCode);
@@ -2035,13 +2112,13 @@ function renderReservationGrid() {
             displayData = displayData.filter(r => r.route === route);
         }
         if (rescheduledOnly) {
-            displayData = displayData.filter(r => r.previous_reception_date !== null && r.previous_reception_date !== undefined);
+            displayData = displayData.filter(r => r.previous_visit_datetime);
         }
     }
 
     // テーブル描画
     if (displayData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">該当する入庫データが見つかりません。</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;">該当する入庫データが見つかりません。</td></tr>';
         if (countSpan) countSpan.textContent = "表示件数: 0 件";
         return;
     }
@@ -2050,26 +2127,30 @@ function renderReservationGrid() {
     displayData.forEach(r => {
         const tr = document.createElement('tr');
         
-        let dateHtml = r.reception_date;
-        if (r.previous_reception_date) {
-            dateHtml = `<span style="text-decoration: line-through; color: var(--text-muted); font-size: 11px;">${r.previous_reception_date}</span><br>➔ <span style="color: var(--secondary); font-weight: 600;">${r.reception_date}</span>`;
+        const bookingDateStr = r.booking_date ? r.booking_date.replace(/-/g, '/') : '-';
+
+        let visitHtml = formatDatetimeJst(r.visit_datetime);
+        if (r.previous_visit_datetime) {
+            const prevStr = formatDatetimeJst(r.previous_visit_datetime);
+            const currStr = formatDatetimeJst(r.visit_datetime);
+            visitHtml = `<span style="text-decoration: line-through; color: var(--text-muted); font-size: 11px;">${prevStr}</span><br>➔ <span style="color: var(--secondary); font-weight: 600;">${currStr}</span>`;
             tr.style.background = 'rgba(59, 130, 246, 0.05)';
         }
 
         const shortCustId = r.hashed_customer_id ? `${r.hashed_customer_id.substring(0, 10)}...` : 'なし';
-        const updatedTimeStr = r.updated_at ? new Date(r.updated_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) : '-';
 
         tr.innerHTML = `
             <td style="font-family: monospace; font-weight: 600;">${r.reservation_id || '-'}</td>
-            <td>${r.store_name || '不明な店舗'}</td>
+            <td>${bookingDateStr}</td>
+            <td>${visitHtml}</td>
             <td><span class="badge" style="background: rgba(147, 197, 253, 0.15); color: #93c5fd; padding: 4px 8px; border-radius: 4px;">${r.work_group || '-'}</span></td>
-            <td>${dateHtml}</td>
+            <td>${r.store_name || '不明な店舗'}</td>
+            <td style="color: var(--text-muted);">${r.gnote_created_by || '-'}</td>
             <td><span class="badge" style="background: rgba(110, 231, 183, 0.15); color: #6ee7b7; padding: 4px 8px; border-radius: 4px;">${r.route || '-'}</span></td>
             <td><span class="badge" style="background: rgba(244, 63, 94, 0.15); color: #f43f5e; padding: 4px 8px; border-radius: 4px;">${r.status || '-'}</span></td>
             <td style="font-family: monospace; color: var(--text-muted); font-size: 11px;" title="${r.hashed_customer_id || ''}">${shortCustId}</td>
-            <td style="color: var(--text-muted); font-size: 11px;">${updatedTimeStr}</td>
             <td style="white-space: nowrap; text-align: center;">
-                <button class="btn btn-secondary" style="padding: 4px 6px; font-size: 11px; display: inline-flex; align-items: center; justify-content: center;" onclick="openEditReservationModal('${r.id}')" title="編集">
+                <button class="btn btn-secondary" style="padding: 4px 6px; font-size: 11px; display: inline-flex; align-items: center; justify-content: center;" onclick="openEditReservationModal('${r.id}')" title="詳細/編集">
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
                 </button>
                 <button class="btn btn-danger" style="padding: 4px 6px; font-size: 11px; margin-left: 4px; display: inline-flex; align-items: center; justify-content: center;" onclick="deleteReservation('${r.id}', '${r.reservation_id}')" title="削除">
@@ -2089,6 +2170,23 @@ async function applyReservationFilters() {
     await loadReservationsList();
 }
 
+// datetime-localフォーム初期値用のヘルパー
+function formatForDatetimeLocal(isoString) {
+    if (!isoString) return '';
+    try {
+        const d = new Date(isoString);
+        if (isNaN(d.getTime())) return '';
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const dateStr = String(d.getDate()).padStart(2, '0');
+        const h = String(d.getHours()).padStart(2, '0');
+        const min = String(d.getMinutes()).padStart(2, '0');
+        return `${y}-${m}-${dateStr}T${h}:${min}`;
+    } catch (e) {
+        return '';
+    }
+}
+
 // 入庫予約データのCRUD操作モーダル制御
 function openAddReservationModal() {
     const modal = document.getElementById('res-edit-modal');
@@ -2099,10 +2197,19 @@ function openAddReservationModal() {
     document.getElementById('res-modal-reservation-id').value = '';
     document.getElementById('res-modal-reservation-id').readOnly = false;
     document.getElementById('res-modal-work-group').value = '';
-    document.getElementById('res-modal-reception-date').value = new Date().toISOString().substring(0, 10);
+    document.getElementById('res-modal-booking-date').value = new Date().toISOString().substring(0, 10);
+    document.getElementById('res-modal-visit-datetime').value = formatForDatetimeLocal(new Date().getTime() + 24*60*60*1000); // 24時間後
+    document.getElementById('res-modal-pit-datetime').value = '';
     document.getElementById('res-modal-route').value = '入庫予約';
     document.getElementById('res-modal-status').value = '本予約';
     document.getElementById('res-modal-customer-id').value = '';
+    document.getElementById('res-modal-car-number').value = '';
+
+    // gnoteシステム情報は追加時は未設定
+    document.getElementById('res-modal-gnote-created-at').textContent = '-';
+    document.getElementById('res-modal-gnote-created-by').textContent = '-';
+    document.getElementById('res-modal-gnote-updated-at').textContent = '-';
+    document.getElementById('res-modal-gnote-updated-by').textContent = '-';
 
     // 店舗セレクトの構築
     const select = document.getElementById('res-modal-store-code');
@@ -2137,10 +2244,19 @@ function openEditReservationModal(id) {
     document.getElementById('res-modal-reservation-id').value = item.reservation_id || '';
     document.getElementById('res-modal-reservation-id').readOnly = true; // 予約IDは主キーに近いため編集不可に
     document.getElementById('res-modal-work-group').value = item.work_group || '';
-    document.getElementById('res-modal-reception-date').value = item.reception_date || '';
+    document.getElementById('res-modal-booking-date').value = item.booking_date || '';
+    document.getElementById('res-modal-visit-datetime').value = formatForDatetimeLocal(item.visit_datetime);
+    document.getElementById('res-modal-pit-datetime').value = formatForDatetimeLocal(item.pit_reservation_datetime);
     document.getElementById('res-modal-route').value = item.route || '入庫予約';
     document.getElementById('res-modal-status').value = item.status || '本予約';
     document.getElementById('res-modal-customer-id').value = item.hashed_customer_id || '';
+    document.getElementById('res-modal-car-number').value = item.car_number || '';
+
+    // gnoteシステム情報の描画 (編集不可・表示専用)
+    document.getElementById('res-modal-gnote-created-at').textContent = formatDatetimeJst(item.gnote_created_at);
+    document.getElementById('res-modal-gnote-created-by').textContent = item.gnote_created_by || '-';
+    document.getElementById('res-modal-gnote-updated-at').textContent = formatDatetimeJst(item.gnote_updated_at);
+    document.getElementById('res-modal-gnote-updated-by').textContent = item.gnote_updated_by || '-';
 
     // 店舗セレクトの構築
     const select = document.getElementById('res-modal-store-code');
@@ -2172,21 +2288,30 @@ async function handleSaveReservation(e) {
     const reservationId = document.getElementById('res-modal-reservation-id').value.trim();
     const storeCode = document.getElementById('res-modal-store-code').value;
     const workGroup = document.getElementById('res-modal-work-group').value.trim();
-    const receptionDate = document.getElementById('res-modal-reception-date').value;
+    const bookingDate = document.getElementById('res-modal-booking-date').value;
+    const visitDatetimeRaw = document.getElementById('res-modal-visit-datetime').value;
+    const pitDatetimeRaw = document.getElementById('res-modal-pit-datetime').value;
+    const carNumber = document.getElementById('res-modal-car-number').value.trim();
     const route = document.getElementById('res-modal-route').value;
     const status = document.getElementById('res-modal-status').value;
     const customerId = document.getElementById('res-modal-customer-id').value.trim();
 
-    if (!reservationId || !storeCode || !workGroup || !receptionDate) {
+    if (!reservationId || !storeCode || !workGroup || !bookingDate || !visitDatetimeRaw) {
         showToast("❌ 必須項目を入力してください。", "error");
         return;
     }
+
+    const visitDatetime = visitDatetimeRaw ? new Date(visitDatetimeRaw).toISOString() : null;
+    const pitReservationDatetime = pitDatetimeRaw ? new Date(pitDatetimeRaw).toISOString() : null;
 
     const payload = {
         reservation_id: reservationId,
         store_code: storeCode,
         work_group: workGroup,
-        reception_date: receptionDate,
+        booking_date: bookingDate,
+        visit_datetime: visitDatetime,
+        pit_reservation_datetime: pitReservationDatetime,
+        car_number: carNumber || null,
         route: route,
         status: status,
         hashed_customer_id: customerId || null,
@@ -4407,6 +4532,7 @@ window.closeResEditModal = closeResEditModal;
 window.handleSaveReservation = handleSaveReservation;
 window.deleteReservation = deleteReservation;
 window.deleteAllReservations = deleteAllReservations;
+window.setAggregationBase = setAggregationBase;
 
 // 💡 自動テスト検証用のグローバルエクスポート
 window.__appDebug = {
