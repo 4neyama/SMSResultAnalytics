@@ -1949,7 +1949,7 @@ async function updateMonthlySummary() {
 
         const year = item.month.substring(0, 4);
         const monthNum = parseInt(item.month.substring(5, 7));
-        badge.innerHTML = `📅 ${year}年${monthNum}月 <span style="opacity: 0.8; font-weight: normal;">(${item.count}件)</span>`;
+        badge.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-calendar" style="margin-right: 4px;"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>${year}年${monthNum}月 <span style="opacity: 0.8; font-weight: normal;">(${item.count}件)</span>`;
         
         badge.onclick = () => {
             const startInput = document.getElementById('filter-res-start-month');
@@ -2068,6 +2068,14 @@ function renderReservationGrid() {
             <td><span class="badge" style="background: rgba(244, 63, 94, 0.15); color: #f43f5e; padding: 4px 8px; border-radius: 4px;">${r.status || '-'}</span></td>
             <td style="font-family: monospace; color: var(--text-muted); font-size: 11px;" title="${r.hashed_customer_id || ''}">${shortCustId}</td>
             <td style="color: var(--text-muted); font-size: 11px;">${updatedTimeStr}</td>
+            <td style="white-space: nowrap; text-align: center;">
+                <button class="btn btn-secondary" style="padding: 4px 6px; font-size: 11px; display: inline-flex; align-items: center; justify-content: center;" onclick="openEditReservationModal('${r.id}')" title="編集">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                </button>
+                <button class="btn btn-danger" style="padding: 4px 6px; font-size: 11px; margin-left: 4px; display: inline-flex; align-items: center; justify-content: center;" onclick="deleteReservation('${r.id}', '${r.reservation_id}')" title="削除">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash-2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                </button>
+            </td>
         `;
         tbody.appendChild(tr);
     });
@@ -2079,6 +2087,233 @@ function renderReservationGrid() {
 
 async function applyReservationFilters() {
     await loadReservationsList();
+}
+
+// 入庫予約データのCRUD操作モーダル制御
+function openAddReservationModal() {
+    const modal = document.getElementById('res-edit-modal');
+    if (!modal) return;
+
+    document.getElementById('res-modal-title').textContent = '入庫予約データの追加';
+    document.getElementById('res-modal-id').value = '';
+    document.getElementById('res-modal-reservation-id').value = '';
+    document.getElementById('res-modal-reservation-id').readOnly = false;
+    document.getElementById('res-modal-work-group').value = '';
+    document.getElementById('res-modal-reception-date').value = new Date().toISOString().substring(0, 10);
+    document.getElementById('res-modal-route').value = '入庫予約';
+    document.getElementById('res-modal-status').value = '本予約';
+    document.getElementById('res-modal-customer-id').value = '';
+
+    // 店舗セレクトの構築
+    const select = document.getElementById('res-modal-store-code');
+    if (select) {
+        select.innerHTML = '';
+        storesCache.forEach(s => {
+            if (s.store_code && s.store_code !== 'unknown') {
+                const opt = document.createElement('option');
+                opt.value = s.store_code;
+                opt.textContent = `${s.store_name} (${s.store_code})`;
+                select.appendChild(opt);
+            }
+        });
+    }
+
+    modal.style.display = 'flex';
+}
+
+function openEditReservationModal(id) {
+    const modal = document.getElementById('res-edit-modal');
+    if (!modal) return;
+
+    // 対象データの取得
+    const item = reservationsListCache.find(r => r.id === id);
+    if (!item) {
+        showToast("❌ 編集対象データが見つかりません。", "error");
+        return;
+    }
+
+    document.getElementById('res-modal-title').textContent = '入庫予約データの編集';
+    document.getElementById('res-modal-id').value = item.id;
+    document.getElementById('res-modal-reservation-id').value = item.reservation_id || '';
+    document.getElementById('res-modal-reservation-id').readOnly = true; // 予約IDは主キーに近いため編集不可に
+    document.getElementById('res-modal-work-group').value = item.work_group || '';
+    document.getElementById('res-modal-reception-date').value = item.reception_date || '';
+    document.getElementById('res-modal-route').value = item.route || '入庫予約';
+    document.getElementById('res-modal-status').value = item.status || '本予約';
+    document.getElementById('res-modal-customer-id').value = item.hashed_customer_id || '';
+
+    // 店舗セレクトの構築
+    const select = document.getElementById('res-modal-store-code');
+    if (select) {
+        select.innerHTML = '';
+        storesCache.forEach(s => {
+            if (s.store_code && s.store_code !== 'unknown') {
+                const opt = document.createElement('option');
+                opt.value = s.store_code;
+                opt.textContent = `${s.store_name} (${s.store_code})`;
+                select.appendChild(opt);
+            }
+        });
+        select.value = item.store_code;
+    }
+
+    modal.style.display = 'flex';
+}
+
+function closeResEditModal() {
+    const modal = document.getElementById('res-edit-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function handleSaveReservation(e) {
+    e.preventDefault();
+
+    const id = document.getElementById('res-modal-id').value;
+    const reservationId = document.getElementById('res-modal-reservation-id').value.trim();
+    const storeCode = document.getElementById('res-modal-store-code').value;
+    const workGroup = document.getElementById('res-modal-work-group').value.trim();
+    const receptionDate = document.getElementById('res-modal-reception-date').value;
+    const route = document.getElementById('res-modal-route').value;
+    const status = document.getElementById('res-modal-status').value;
+    const customerId = document.getElementById('res-modal-customer-id').value.trim();
+
+    if (!reservationId || !storeCode || !workGroup || !receptionDate) {
+        showToast("❌ 必須項目を入力してください。", "error");
+        return;
+    }
+
+    const payload = {
+        reservation_id: reservationId,
+        store_code: storeCode,
+        work_group: workGroup,
+        reception_date: receptionDate,
+        route: route,
+        status: status,
+        hashed_customer_id: customerId || null,
+        updated_at: new Date().toISOString()
+    };
+
+    try {
+        if (!supabaseClient) {
+            // デモモード（オフライン時）：ローカルキャッシュを疑似操作
+            if (id) {
+                // 編集
+                const idx = reservationsCache.findIndex(r => r.id === id);
+                if (idx !== -1) {
+                    const store = storesCache.find(s => s.store_code === storeCode);
+                    reservationsCache[idx] = {
+                        ...reservationsCache[idx],
+                        ...payload,
+                        store_name: store ? store.store_name : '不明な店舗'
+                    };
+                }
+            } else {
+                // 新規追加
+                const store = storesCache.find(s => s.store_code === storeCode);
+                const newId = 'demo-' + Math.random().toString(36).substr(2, 9);
+                reservationsCache.push({
+                    id: newId,
+                    ...payload,
+                    store_name: store ? store.store_name : '不明な店舗',
+                    created_at: new Date().toISOString()
+                });
+            }
+            showToast("✅ [デモ] 予約データを保存しました。");
+            closeResEditModal();
+            renderReservationGrid();
+            await updateMonthlySummary();
+            return;
+        }
+
+        // オンライン（Supabase接続時）
+        if (id) {
+            // 編集（UUIDによるupdate）
+            const { error } = await supabaseClient
+                .from('reservations')
+                .update(payload)
+                .eq('id', id);
+            if (error) throw error;
+            showToast("✅ 予約データを更新しました。");
+        } else {
+            // 新規追加
+            const { error } = await supabaseClient
+                .from('reservations')
+                .insert([{
+                    ...payload,
+                    created_at: new Date().toISOString()
+                }]);
+            if (error) throw error;
+            showToast("✅ 新規予約データを追加しました。");
+        }
+
+        closeResEditModal();
+        await loadReservationsList();
+    } catch (err) {
+        console.error(err);
+        showToast(`❌ 保存に失敗しました: ${err.message || err}`, "error");
+    }
+}
+
+async function deleteReservation(id, reservationId) {
+    showCustomConfirm(
+        `予約ID [${reservationId}] のデータを削除しますか？<br><br><span style="color: var(--danger); font-weight: bold;">※この操作は取り消せません。</span>`,
+        async () => {
+            try {
+                if (!supabaseClient) {
+                    // デモモード：キャッシュから削除
+                    reservationsCache = reservationsCache.filter(r => r.id !== id);
+                    showToast("✅ [デモ] データを削除しました。");
+                    renderReservationGrid();
+                    await updateMonthlySummary();
+                    return;
+                }
+
+                // オンライン
+                const { error } = await supabaseClient
+                    .from('reservations')
+                    .delete()
+                    .eq('id', id);
+                if (error) throw error;
+
+                showToast("✅ データを削除しました。");
+                await loadReservationsList();
+            } catch (err) {
+                console.error(err);
+                showToast(`❌ 削除に失敗しました: ${err.message || err}`, "error");
+            }
+        }
+    );
+}
+
+async function deleteAllReservations() {
+    showCustomConfirm(
+        `すべての入庫予約データを完全に消去して、クリーンにしますか？<br><br><span style="color: var(--danger); font-weight: bold;">※この操作は取り消せません。現在登録されているすべての予約明細が消去されます。</span>`,
+        async () => {
+            try {
+                if (!supabaseClient) {
+                    // デモモード：キャッシュクリア
+                    reservationsCache = [];
+                    showToast("✅ [デモ] すべてのデータをクリアしました。");
+                    renderReservationGrid();
+                    await updateMonthlySummary();
+                    return;
+                }
+
+                // オンライン：全件削除
+                const { error } = await supabaseClient
+                    .from('reservations')
+                    .delete()
+                    .neq('id', '00000000-0000-0000-0000-000000000000'); // 全削除用のダミー条件
+                if (error) throw error;
+
+                showToast("✅ すべての予約データをクリアしました。");
+                await loadReservationsList();
+            } catch (err) {
+                console.error(err);
+                showToast(`❌ クリアに失敗しました: ${err.message || err}`, "error");
+            }
+        }
+    );
 }
 
 
@@ -3898,6 +4133,12 @@ window.handleStoreImportSubmit = handleStoreImportSubmit;
 window.loadReservationsList = loadReservationsList;
 window.applyReservationFilters = applyReservationFilters;
 window.updateMonthlySummary = updateMonthlySummary;
+window.openAddReservationModal = openAddReservationModal;
+window.openEditReservationModal = openEditReservationModal;
+window.closeResEditModal = closeResEditModal;
+window.handleSaveReservation = handleSaveReservation;
+window.deleteReservation = deleteReservation;
+window.deleteAllReservations = deleteAllReservations;
 
 // 💡 自動テスト検証用のグローバルエクスポート
 window.__appDebug = {
