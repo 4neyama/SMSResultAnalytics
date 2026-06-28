@@ -2410,34 +2410,37 @@ async function deleteReservation(id, reservationId) {
 }
 
 async function deleteAllReservations() {
-    showCustomConfirm(
-        `すべての入庫予約データを完全に消去して、クリーンにしますか？<br><br><span style="color: var(--danger); font-weight: bold;">※この操作は取り消せません。現在登録されているすべての予約明細が消去されます。</span>`,
-        async () => {
-            try {
-                if (!supabaseClient) {
-                    // デモモード：キャッシュクリア
-                    reservationsCache = [];
-                    showToast("✅ [デモ] すべてのデータをクリアしました。");
-                    renderReservationGrid();
-                    await updateMonthlySummary();
-                    return;
-                }
+    const message = `すべての入庫予約データを完全に消去して、クリーンにしますか？<br><br><span style="color: var(--danger); font-weight: bold;">※この操作は取り消せません。現在登録されているすべての予約明細が消去されます。</span>`;
+    const ok = await showCustomConfirm("入庫予約データの全消去", message, true);
+    
+    if (!ok) return;
 
-                // オンライン：全件削除
-                const { error } = await supabaseClient
-                    .from('reservations')
-                    .delete()
-                    .neq('id', '00000000-0000-0000-0000-000000000000'); // 全削除用のダミー条件
-                if (error) throw error;
-
-                showToast("✅ すべての予約データをクリアしました。");
-                await loadReservationsList();
-            } catch (err) {
-                console.error(err);
-                showToast(`❌ クリアに失敗しました: ${err.message || err}`, "error");
-            }
+    try {
+        if (!supabaseClient) {
+            // デモモード：キャッシュクリア
+            reservationsCache = [];
+            showToast("✅ [デモ] すべてのデータをクリアしました。");
+            renderReservationGrid();
+            await updateMonthlySummary();
+            return;
         }
-    );
+
+        // オンライン：全件削除
+        const { error } = await supabaseClient
+            .from('reservations')
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000'); // 全削除用のダミー条件
+        if (error) throw error;
+
+        // ローカルの明細キャッシュもクリア
+        reservationsListCache = [];
+
+        showToast("✅ すべての予約データをクリアしました。");
+        await loadReservationsList();
+    } catch (err) {
+        console.error(err);
+        showToast(`❌ クリアに失敗しました: ${err.message || err}`, "error");
+    }
 }
 
 
