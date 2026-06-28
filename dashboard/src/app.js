@@ -2055,11 +2055,11 @@ async function updateMonthlySummary() {
     const rescheduledOnly = document.getElementById('filter-res-rescheduled-only')?.checked;
     const dateField = currentSummaryBase; // 'booking_date' または 'visit_datetime'
 
-    let filtered = [];
+    const summaryMap = {};
 
     if (!supabaseClient) {
         // オフライン・デモ環境
-        filtered = [...reservationsCache];
+        let filtered = [...reservationsCache];
         if (storeCode && storeCode !== 'all') {
             filtered = filtered.filter(r => r.store_code === storeCode);
         }
@@ -2069,12 +2069,23 @@ async function updateMonthlySummary() {
         if (rescheduledOnly) {
             filtered = filtered.filter(r => r.previous_visit_datetime);
         }
+
+        filtered.forEach(r => {
+            const val = r[dateField];
+            if (val) {
+                const m = val.substring(0, 7); // YYYY-MM
+                summaryMap[m] = (summaryMap[m] || 0) + 1;
+            }
+        });
     } else {
-        // オンライン環境：データベースから日付カラムのみを全件取得して正確に集計する（1000件リミット回避）
+        // オンライン環境：集計ビュー monthly_reservation_summary_v2 を利用して1000件制限を完全バイパス
         try {
+            const isVisit = (dateField === 'visit_datetime');
+            const monthColumn = isVisit ? 'visit_month' : 'booking_month';
+
             let countQuery = supabaseClient
-                .from('reservations')
-                .select(`${dateField}, previous_visit_datetime`);
+                .from('monthly_reservation_summary_v2')
+                .select(`${monthColumn}, count`);
 
             if (storeCode && storeCode !== 'all') {
                 countQuery = countQuery.eq('store_code', storeCode);
@@ -2083,28 +2094,33 @@ async function updateMonthlySummary() {
                 countQuery = countQuery.eq('route', route);
             }
             if (rescheduledOnly) {
-                countQuery = countQuery.not('previous_visit_datetime', 'is', null);
+                countQuery = countQuery.eq('rescheduled', true);
             }
 
             const { data, error } = await countQuery;
             if (error) throw error;
-            filtered = data || [];
+
+            if (data) {
+                data.forEach(item => {
+                    const m = item[monthColumn];
+                    if (m) {
+                        summaryMap[m] = (summaryMap[m] || 0) + parseInt(item.count || 0);
+                    }
+                });
+            }
         } catch (err) {
             console.error("❌ 月別サマリーのオンライン全件集計失敗:", err);
-            // フォールバック
-            filtered = [...reservationsListCache];
+            // フォールバック：ロードされているメモリから集計
+            let filtered = [...reservationsListCache];
+            filtered.forEach(r => {
+                const val = r[dateField];
+                if (val) {
+                    const m = val.substring(0, 7); // YYYY-MM
+                    summaryMap[m] = (summaryMap[m] || 0) + 1;
+                }
+            });
         }
     }
-
-    const summaryMap = {};
-
-    filtered.forEach(r => {
-        const val = r[dateField];
-        if (val) {
-            const m = val.substring(0, 7); // YYYY-MM
-            summaryMap[m] = (summaryMap[m] || 0) + 1;
-        }
-    });
 
     const monthlyData = Object.entries(summaryMap).map(([month, count]) => ({ month, count }))
         .sort((a, b) => b.month.localeCompare(a.month));
