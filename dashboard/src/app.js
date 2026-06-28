@@ -2137,70 +2137,182 @@ async function updateMonthlySummary() {
     const filterStart = document.getElementById('filter-res-start-month')?.value;
     const filterEnd = document.getElementById('filter-res-end-month')?.value;
 
+    // 年ごとにグループ化
+    const yearsGroup = {};
     monthlyData.forEach(item => {
-        const badge = document.createElement('div');
-        const isActive = (filterStart === item.month && filterEnd === item.month);
-        
-        badge.className = `badge monthly-summary-badge ${isActive ? 'active' : ''}`;
-        
-        // スタイルを設定 (Vibrant UI Aesthetics)
-        badge.style.padding = '6px 12px';
-        badge.style.borderRadius = '20px';
-        badge.style.fontSize = '12px';
-        badge.style.fontWeight = '600';
-        badge.style.cursor = 'pointer';
-        badge.style.display = 'inline-flex';
-        badge.style.alignItems = 'center';
-        badge.style.gap = '6px';
-        badge.style.transition = 'all 0.2s ease';
-        
-        if (isActive) {
-            badge.style.background = 'linear-gradient(135deg, #3b82f6, #2563eb)';
-            badge.style.color = '#ffffff';
-            badge.style.boxShadow = '0 0 10px rgba(59, 130, 246, 0.5)';
-            badge.style.border = '1px solid #60a5fa';
-        } else {
-            badge.style.background = 'rgba(30, 41, 59, 0.6)';
-            badge.style.color = 'var(--text-main)';
-            badge.style.border = '1px solid var(--border-color)';
-        }
-
-        // ホバーエフェクト
-        badge.onmouseover = () => {
-            if (!isActive) {
-                badge.style.background = 'rgba(59, 130, 246, 0.15)';
-                badge.style.borderColor = '#3b82f6';
-            }
-        };
-        badge.onmouseout = () => {
-            if (!isActive) {
-                badge.style.background = 'rgba(30, 41, 59, 0.6)';
-                badge.style.borderColor = 'var(--border-color)';
-            }
-        };
-
         const year = item.month.substring(0, 4);
-        const monthNum = parseInt(item.month.substring(5, 7));
-        badge.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-calendar" style="margin-right: 4px;"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>${year}年${monthNum}月 <span style="opacity: 0.8; font-weight: normal;">(${item.count}件)</span>`;
-        
-        badge.onclick = () => {
-            const startInput = document.getElementById('filter-res-start-month');
-            const endInput = document.getElementById('filter-res-end-month');
-            if (!startInput || !endInput) return;
+        if (!yearsGroup[year]) {
+            yearsGroup[year] = {
+                items: [],
+                totalCount: 0
+            };
+        }
+        yearsGroup[year].items.push(item);
+        yearsGroup[year].totalCount += item.count;
+    });
 
-            if (isActive) {
-                // すでに選択されている月を再度クリックした場合はクリア
-                startInput.value = '';
-                endInput.value = '';
-            } else {
-                // 選択した月にセット
-                startInput.value = item.month;
-                endInput.value = item.month;
-            }
-            applyReservationFilters();
+    // 年のリストを降順でソートして描画
+    const sortedYears = Object.keys(yearsGroup).sort((a, b) => b.localeCompare(a));
+
+    sortedYears.forEach((year, index) => {
+        // アコーディオン全体のコンテナ
+        const accordionSection = document.createElement('div');
+        accordionSection.className = 'summary-accordion-section';
+        accordionSection.style.border = '1px solid var(--border-color)';
+        accordionSection.style.borderRadius = '8px';
+        accordionSection.style.background = 'rgba(30, 41, 59, 0.2)';
+        accordionSection.style.overflow = 'hidden';
+        accordionSection.style.transition = 'all 0.2s ease';
+
+        // アコーディオンのヘッダー
+        const header = document.createElement('div');
+        header.className = 'summary-accordion-header';
+        header.style.display = 'flex';
+        header.style.alignItems = 'center';
+        header.style.justifyContent = 'space-between';
+        header.style.padding = '10px 14px';
+        header.style.background = 'rgba(30, 41, 59, 0.4)';
+        header.style.cursor = 'pointer';
+        header.style.userSelect = 'none';
+        header.style.transition = 'background 0.2s ease';
+
+        // ヘッダーホバーエフェクト
+        header.onmouseover = () => {
+            header.style.background = 'rgba(59, 130, 246, 0.08)';
+        };
+        header.onmouseout = () => {
+            header.style.background = 'rgba(30, 41, 59, 0.4)';
         };
 
-        listContainer.appendChild(badge);
+        // タイトル部分 (フォルダーアイコン + 年 + 件数)
+        const titleSpan = document.createElement('span');
+        titleSpan.style.display = 'flex';
+        titleSpan.style.alignItems = 'center';
+        titleSpan.style.gap = '8px';
+        titleSpan.style.fontSize = '13px';
+        titleSpan.style.fontWeight = '600';
+        titleSpan.style.color = 'var(--text-main)';
+
+        // フォルダ線画アイコン (lucide folder)
+        titleSpan.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-folder" style="color: var(--primary);"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+            ${year}年 <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">(合計 ${yearsGroup[year].totalCount}件)</span>
+        `;
+
+        // 矢印アイコン (lucide chevron-down / chevron-right)
+        const arrowSpan = document.createElement('span');
+        arrowSpan.style.display = 'flex';
+        arrowSpan.style.alignItems = 'center';
+        arrowSpan.style.color = 'var(--text-muted)';
+        arrowSpan.style.transition = 'transform 0.2s ease';
+
+        // バッジリストを格納するボディコンテナ
+        const bodyContainer = document.createElement('div');
+        bodyContainer.className = 'summary-accordion-body';
+        bodyContainer.style.padding = '12px 14px';
+        bodyContainer.style.display = 'flex';
+        bodyContainer.style.gap = '8px';
+        bodyContainer.style.flexWrap = 'wrap';
+        bodyContainer.style.borderTop = '1px solid var(--border-color)';
+
+        // 初期展開状態の設定：最新の年（最初の年）か、現在選択中の月が含まれる年はデフォルト展開
+        const hasActiveMonth = yearsGroup[year].items.some(item => filterStart === item.month && filterEnd === item.month);
+        const isDefaultOpen = index === 0 || hasActiveMonth;
+
+        let isOpen = isDefaultOpen;
+
+        const updateAccordionState = () => {
+            if (isOpen) {
+                bodyContainer.style.display = 'flex';
+                // 下向き矢印
+                arrowSpan.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down"><path d="m6 9 6 6 6-6"/></svg>`;
+            } else {
+                bodyContainer.style.display = 'none';
+                // 右向き矢印
+                arrowSpan.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right"><path d="m9 18 6-6-6-6"/></svg>`;
+            }
+        };
+
+        // 初期表示設定の適用
+        updateAccordionState();
+
+        header.onclick = () => {
+            isOpen = !isOpen;
+            updateAccordionState();
+        };
+
+        // 各月のバッジを追加
+        yearsGroup[year].items.forEach(item => {
+            const badge = document.createElement('div');
+            const isActive = (filterStart === item.month && filterEnd === item.month);
+            
+            badge.className = `badge monthly-summary-badge ${isActive ? 'active' : ''}`;
+            
+            badge.style.padding = '6px 12px';
+            badge.style.borderRadius = '20px';
+            badge.style.fontSize = '12px';
+            badge.style.fontWeight = '600';
+            badge.style.cursor = 'pointer';
+            badge.style.display = 'inline-flex';
+            badge.style.alignItems = 'center';
+            badge.style.gap = '6px';
+            badge.style.transition = 'all 0.2s ease';
+            
+            if (isActive) {
+                badge.style.background = 'linear-gradient(135deg, #3b82f6, #2563eb)';
+                badge.style.color = '#ffffff';
+                badge.style.boxShadow = '0 0 10px rgba(59, 130, 246, 0.5)';
+                badge.style.border = '1px solid #60a5fa';
+            } else {
+                badge.style.background = 'rgba(30, 41, 59, 0.6)';
+                badge.style.color = 'var(--text-main)';
+                badge.style.border = '1px solid var(--border-color)';
+            }
+
+            // ホバーエフェクト
+            badge.onmouseover = () => {
+                if (!isActive) {
+                    badge.style.background = 'rgba(59, 130, 246, 0.15)';
+                    badge.style.borderColor = '#3b82f6';
+                }
+            };
+            badge.onmouseout = () => {
+                if (!isActive) {
+                    badge.style.background = 'rgba(30, 41, 59, 0.6)';
+                    badge.style.borderColor = 'var(--border-color)';
+                }
+            };
+
+            const monthNum = parseInt(item.month.substring(5, 7));
+            badge.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-calendar" style="margin-right: 4px;"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>${monthNum}月 <span style="opacity: 0.8; font-weight: normal;">(${item.count}件)</span>`;
+            
+            badge.onclick = (e) => {
+                e.stopPropagation(); // アコーディオンの開閉トリガーを抑制
+                
+                const startInput = document.getElementById('filter-res-start-month');
+                const endInput = document.getElementById('filter-res-end-month');
+                if (!startInput || !endInput) return;
+
+                if (isActive) {
+                    // すでに選択されている月を再度クリックした場合はクリア
+                    startInput.value = '';
+                    endInput.value = '';
+                } else {
+                    // 選択した月にセット
+                    startInput.value = item.month;
+                    endInput.value = item.month;
+                }
+                applyReservationFilters();
+            };
+
+            bodyContainer.appendChild(badge);
+        });
+
+        header.appendChild(titleSpan);
+        header.appendChild(arrowSpan);
+        accordionSection.appendChild(header);
+        accordionSection.appendChild(bodyContainer);
+        listContainer.appendChild(accordionSection);
     });
 }
 
