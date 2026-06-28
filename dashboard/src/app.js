@@ -1434,7 +1434,7 @@ function renderStoreHeatmap(stores, deliveries, reservations, storeSms, isIdMatc
     tableBody.innerHTML = '';
 
     if (stores.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">対象店舗がありません。</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">対象店舗がありません。</td></tr>';
         return;
     }
 
@@ -1526,11 +1526,17 @@ function renderStoreHeatmap(stores, deliveries, reservations, storeSms, isIdMatc
         const areaTotalRes = areaSmsResTotal + areaLineResTotal + areaEmoResTotal;
         const areaTotalSent = areaSmsSentTotal + areaOwnSmsTotal;
         const areaRateVal = areaTotalSent > 0 ? (areaTotalRes / areaTotalSent * 100) : 0;
+        const areaSmsRateVal = areaTotalSent > 0 ? (areaSmsResTotal / areaTotalSent * 100) : 0;
 
         let areaHmClass = 'hm-level-0';
         if (areaRateVal >= 4.0) areaHmClass = 'hm-level-3';
         else if (areaRateVal >= 2.5) areaHmClass = 'hm-level-2';
         else if (areaRateVal >= 1.0) areaHmClass = 'hm-level-1';
+
+        let areaSmsHmClass = 'hm-level-0';
+        if (areaSmsRateVal >= 4.0) areaSmsHmClass = 'hm-level-3';
+        else if (areaSmsRateVal >= 2.5) areaSmsHmClass = 'hm-level-2';
+        else if (areaSmsRateVal >= 1.0) areaSmsHmClass = 'hm-level-1';
 
         // アコーディオン開閉状態 (デフォルトはすべて展開: true)
         if (heatmapAccordionStates[area] === undefined) {
@@ -1554,6 +1560,7 @@ function renderStoreHeatmap(stores, deliveries, reservations, storeSms, isIdMatc
                 <td style="font-weight: 700; background: rgba(255, 255, 255, 0.05);">${areaSmsResTotal.toLocaleString()}</td>
                 <td style="font-weight: 700; background: rgba(255, 255, 255, 0.05);">${areaLineResTotal.toLocaleString()}</td>
                 <td style="font-weight: 700; background: rgba(255, 255, 255, 0.05);">${areaEmoResTotal.toLocaleString()}</td>
+                <td class="hm-cell ${areaSmsHmClass}" style="font-weight: 700; border: 1px solid rgba(255, 255, 255, 0.1);">${areaSmsRateVal.toFixed(2)} %</td>
                 <td class="hm-cell ${areaHmClass}" style="font-weight: 700; border: 1px solid rgba(255, 255, 255, 0.1);">${areaRateVal.toFixed(2)} %</td>
             </tr>
         `;
@@ -1612,12 +1619,18 @@ function renderStoreHeatmap(stores, deliveries, reservations, storeSms, isIdMatc
             const totalRes = smsRes + lineRes + emoRes;
             const totalSent = smsSent + ownSms;
             const rateVal = totalSent > 0 ? (totalRes / totalSent * 100) : 0;
+            const smsRateVal = totalSent > 0 ? (smsRes / totalSent * 100) : 0;
 
             // ヒートマップレベルの判定
             let hmClass = 'hm-level-0';
             if (rateVal >= 4.0) hmClass = 'hm-level-3';
             else if (rateVal >= 2.5) hmClass = 'hm-level-2';
             else if (rateVal >= 1.0) hmClass = 'hm-level-1';
+
+            let smsHmClass = 'hm-level-0';
+            if (smsRateVal >= 4.0) smsHmClass = 'hm-level-3';
+            else if (smsRateVal >= 2.5) smsHmClass = 'hm-level-2';
+            else if (smsRateVal >= 1.0) smsHmClass = 'hm-level-1';
 
             tableBody.innerHTML += `
                 <tr class="store-heatmap-row" data-area="${area}" style="display: ${displayStyle};">
@@ -1628,6 +1641,7 @@ function renderStoreHeatmap(stores, deliveries, reservations, storeSms, isIdMatc
                     <td>${smsRes}</td>
                     <td>${lineRes}</td>
                     <td>${emoRes}</td>
+                    <td class="hm-cell ${smsHmClass}">${smsRateVal.toFixed(2)} %</td>
                     <td class="hm-cell ${hmClass}">${rateVal.toFixed(2)} %</td>
                 </tr>
             `;
