@@ -112,6 +112,19 @@
                             </select>
                         </div>
                     </div>
+                    
+                    <!-- 集計基準トグル -->
+                    <div class="filter-item" style="min-width: 250px;">
+                        <label><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-git-commit" style="vertical-align: middle; margin-right: 4px;"><circle cx="12" cy="12" r="3"/><line x1="3" x2="9" y1="12" y2="12"/><line x1="15" x2="21" y1="12" y2="12"/></svg>集計基準日</label>
+                        <div class="segment-control" style="display: flex; background: rgba(15, 23, 42, 0.5); padding: 3px; border-radius: 8px; border: 1px solid var(--border-color); width: fit-content; gap: 4px;">
+                            <button id="toggle-base-booking" class="segment-btn active" onclick="setAggregationBase('booking_date')" style="padding: 6px 12px; font-size: 12px; border: none; border-radius: 6px; background: linear-gradient(135deg, #3b82f6, #2563eb); color: #ffffff; cursor: pointer; font-weight: 600; transition: all 0.2s; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-calendar-days"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg>予約受付日
+                            </button>
+                            <button id="toggle-base-visit" class="segment-btn" onclick="setAggregationBase('visit_datetime')" style="padding: 6px 12px; font-size: 12px; border: none; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; font-weight: 600; transition: all 0.2s; display: flex; align-items: center; gap: 4px;">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-car"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M5 10h11M12 10V7M14 10l-1.5-3"/></svg>お客様来店日
+                            </button>
+                        </div>
+                    </div>
                     <div class="filter-item">
                         <label for="filter-area">エリア</label>
                         <select id="filter-area" onchange="handleAreaChange()">
@@ -436,19 +449,21 @@
                                 <thead>
                                     <tr>
                                         <th>予約ID</th>
-                                        <th>店舗名</th>
+                                        <th>受付日</th>
+                                        <th>お客様来店日時</th>
                                         <th>作業グループ</th>
-                                        <th>来店予約日</th>
+                                        <th>店舗名</th>
+                                        <th>車両ナンバー</th>
+                                        <th>登録者 (gnote)</th>
                                         <th>予約経路</th>
                                         <th>ステータス</th>
                                         <th>ハッシュ顧客ID</th>
-                                        <th>更新日時</th>
                                         <th style="width: 80px;">操作</th>
                                     </tr>
                                 </thead>
                                 <tbody id="reservation-list-body">
                                     <tr>
-                                        <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px;">データを読み込んでいます...</td>
+                                        <td colspan="11" style="text-align: center; color: var(--text-muted); padding: 24px;">データを読み込んでいます...</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -659,7 +674,7 @@
 
     <!-- 7. 入庫予約追加・編集用モーダル -->
     <div id="res-edit-modal" class="auth-gate" style="display: none;">
-        <div class="glass-card auth-card" style="position: relative; max-width: 500px; text-align: left; padding: 24px;">
+        <div class="glass-card auth-card" style="position: relative; max-width: 500px; text-align: left; padding: 24px; max-height: 85vh; overflow-y: auto;">
             <button onclick="closeResEditModal()" style="position: absolute; top: 16px; right: 16px; background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px;">✕</button>
             <h2 id="res-modal-title">入庫予約データの追加</h2>
             <p style="color: var(--text-muted); font-size: 11px; margin-bottom: 16px;">必要な情報を入力して保存してください。</p>
@@ -684,8 +699,18 @@
                 </div>
 
                 <div class="form-group" style="margin-bottom: 12px;">
-                    <label for="res-modal-reception-date">来店予約日 *</label>
-                    <input type="date" id="res-modal-reception-date" required style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(30, 41, 59, 0.6); color: var(--text-main);">
+                    <label for="res-modal-booking-date">予約受付日 *</label>
+                    <input type="date" id="res-modal-booking-date" required style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(30, 41, 59, 0.6); color: var(--text-main);">
+                </div>
+
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <label for="res-modal-visit-datetime">お客様来店日時 *</label>
+                    <input type="datetime-local" id="res-modal-visit-datetime" required style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(30, 41, 59, 0.6); color: var(--text-main);">
+                </div>
+
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <label for="res-modal-pit-datetime">工場予約日時</label>
+                    <input type="datetime-local" id="res-modal-pit-datetime" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(30, 41, 59, 0.6); color: var(--text-main);">
                 </div>
 
                 <div class="form-group" style="margin-bottom: 12px;">
@@ -707,9 +732,25 @@
                     </select>
                 </div>
 
-                <div class="form-group" style="margin-bottom: 16px;">
+                <div class="form-group" style="margin-bottom: 12px;">
                     <label for="res-modal-customer-id">ハッシュ顧客ID</label>
                     <input type="text" id="res-modal-customer-id" placeholder="ハッシュ化した顧客ID（任意）" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(30, 41, 59, 0.6); color: var(--text-main); font-family: monospace;">
+                </div>
+
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <label for="res-modal-car-number">車両ナンバー</label>
+                    <input type="text" id="res-modal-car-number" placeholder="例: 岡山500あ1234" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(30, 41, 59, 0.6); color: var(--text-main);">
+                </div>
+
+                <!-- gnoteシステム情報 (表示専用・編集不可) -->
+                <div id="res-modal-gnote-info" style="margin-top: 16px; margin-bottom: 16px; padding: 12px; border-radius: 6px; background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border-color); font-size: 11px;">
+                    <h4 style="font-size: 12px; margin-bottom: 8px; color: var(--secondary); display: flex; align-items: center; gap: 4px;"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-info" style="vertical-align: middle;"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>gnoteシステム管理情報</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; color: var(--text-muted);">
+                        <div>登録日時: <span id="res-modal-gnote-created-at" style="color: var(--text-main); font-weight: 500;">-</span></div>
+                        <div>登録者: <span id="res-modal-gnote-created-by" style="color: var(--text-main); font-weight: 500;">-</span></div>
+                        <div>更新日時: <span id="res-modal-gnote-updated-at" style="color: var(--text-main); font-weight: 500;">-</span></div>
+                        <div>更新者: <span id="res-modal-gnote-updated-by" style="color: var(--text-main); font-weight: 500;">-</span></div>
+                    </div>
                 </div>
 
                 <button type="submit" class="btn btn-primary" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-save"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>保存する</button>

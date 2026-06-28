@@ -2116,7 +2116,7 @@ function renderReservationGrid() {
 
     // テーブル描画
     if (displayData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;">該当する入庫データが見つかりません。</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; color: var(--text-muted); padding: 24px;">該当する入庫データが見つかりません。</td></tr>';
         if (countSpan) countSpan.textContent = "表示件数: 0 件";
         return;
     }
@@ -2143,6 +2143,7 @@ function renderReservationGrid() {
             <td>${visitHtml}</td>
             <td><span class="badge" style="background: rgba(147, 197, 253, 0.15); color: #93c5fd; padding: 4px 8px; border-radius: 4px;">${r.work_group || '-'}</span></td>
             <td>${r.store_name || '不明な店舗'}</td>
+            <td style="color: var(--text-main); font-weight: 500;">${r.car_number || '-'}</td>
             <td style="color: var(--text-muted);">${r.gnote_created_by || '-'}</td>
             <td><span class="badge" style="background: rgba(110, 231, 183, 0.15); color: #6ee7b7; padding: 4px 8px; border-radius: 4px;">${r.route || '-'}</span></td>
             <td><span class="badge" style="background: rgba(244, 63, 94, 0.15); color: #f43f5e; padding: 4px 8px; border-radius: 4px;">${r.status || '-'}</span></td>
