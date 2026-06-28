@@ -2009,23 +2009,50 @@ async function updateMonthlySummary() {
     const storeCode = document.getElementById('filter-res-store')?.value;
     const route = document.getElementById('filter-res-route')?.value;
     const rescheduledOnly = document.getElementById('filter-res-rescheduled-only')?.checked;
+    const dateField = currentAggregationBase; // 'booking_date' または 'visit_datetime'
 
-    // オンライン時は明細キャッシュ、オフライン時はデモ用キャッシュを使用
-    const targetList = supabaseClient ? reservationsListCache : reservationsCache;
+    let filtered = [];
 
-    let filtered = [...targetList];
-    if (storeCode && storeCode !== 'all') {
-        filtered = filtered.filter(r => r.store_code === storeCode);
-    }
-    if (route && route !== 'all') {
-        filtered = filtered.filter(r => r.route === route);
-    }
-    if (rescheduledOnly) {
-        filtered = filtered.filter(r => r.previous_visit_datetime);
+    if (!supabaseClient) {
+        // オフライン・デモ環境
+        filtered = [...reservationsCache];
+        if (storeCode && storeCode !== 'all') {
+            filtered = filtered.filter(r => r.store_code === storeCode);
+        }
+        if (route && route !== 'all') {
+            filtered = filtered.filter(r => r.route === route);
+        }
+        if (rescheduledOnly) {
+            filtered = filtered.filter(r => r.previous_visit_datetime);
+        }
+    } else {
+        // オンライン環境：データベースから日付カラムのみを全件取得して正確に集計する（1000件リミット回避）
+        try {
+            let countQuery = supabaseClient
+                .from('reservations')
+                .select(`${dateField}, previous_visit_datetime`);
+
+            if (storeCode && storeCode !== 'all') {
+                countQuery = countQuery.eq('store_code', storeCode);
+            }
+            if (route && route !== 'all') {
+                countQuery = countQuery.eq('route', route);
+            }
+            if (rescheduledOnly) {
+                countQuery = countQuery.not('previous_visit_datetime', 'is', null);
+            }
+
+            const { data, error } = await countQuery;
+            if (error) throw error;
+            filtered = data || [];
+        } catch (err) {
+            console.error("❌ 月別サマリーのオンライン全件集計失敗:", err);
+            // フォールバック
+            filtered = [...reservationsListCache];
+        }
     }
 
     const summaryMap = {};
-    const dateField = currentAggregationBase; // 'booking_date' または 'visit_datetime'
 
     filtered.forEach(r => {
         const val = r[dateField];
