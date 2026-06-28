@@ -10,6 +10,14 @@ DROP TABLE IF EXISTS reservations;
 DROP TABLE IF EXISTS sms_deliveries;
 DROP TABLE IF EXISTS campaigns;
 DROP TABLE IF EXISTS stores;
+DROP TABLE IF EXISTS areas;
+
+-- 2.0. エリアマスタテーブルの作成
+CREATE TABLE areas (
+    area_name VARCHAR(50) PRIMARY KEY,          -- エリア名 (例: 中国1G)
+    display_order INTEGER DEFAULT 0,            -- 表示順
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
 
 -- 2. 店舗マスタテーブルの作成
 CREATE TABLE stores (
@@ -103,6 +111,11 @@ INSERT INTO stores (store_code, ss_code, store_name, area_name) VALUES
 ('unknown', 'unknown', '不明な店舗', '不明')
 ON CONFLICT (store_code) DO NOTHING;
 
+-- 8.2. 不明エリア (不明) の登録
+INSERT INTO areas (area_name, display_order) VALUES
+('不明', 9999)
+ON CONFLICT (area_name) DO NOTHING;
+
 -- 9. インデックスの作成（クエリの高速化用）
 CREATE INDEX idx_sms_deliveries_campaign ON sms_deliveries(campaign_id);
 CREATE INDEX idx_sms_deliveries_store ON sms_deliveries(store_code);
@@ -118,15 +131,17 @@ CREATE INDEX idx_store_own_sms_month ON store_own_sms(delivery_month);
 
 -- 10. 行レベルセキュリティ (Row Level Security: RLS) の有効化
 ALTER TABLE stores ENABLE ROW LEVEL SECURITY;
+ALTER TABLE areas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE campaigns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sms_deliveries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reservations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE store_own_sms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE category_mappings ENABLE ROW LEVEL SECURITY;
 
--- 11. RLS ポリシーの定義
+-- 11. RLS ポリシー of 定義
 -- (A) 匿名ユーザー(anon) および ログインユーザーは、すべてのデータを読み取り(SELECT)可能にする
 CREATE POLICY "Allow select for everyone" ON stores FOR SELECT USING (true);
+CREATE POLICY "Allow select for everyone" ON areas FOR SELECT USING (true);
 CREATE POLICY "Allow select for everyone" ON campaigns FOR SELECT USING (true);
 CREATE POLICY "Allow select for everyone" ON sms_deliveries FOR SELECT USING (true);
 CREATE POLICY "Allow select for everyone" ON reservations FOR SELECT USING (true);
@@ -135,6 +150,7 @@ CREATE POLICY "Allow select for everyone" ON category_mappings FOR SELECT USING 
 
 -- (B) ログインした管理者(authenticatedロール)のみ、データの追加・更新・削除を許可する
 CREATE POLICY "Allow write for admin" ON stores FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow write for admin" ON areas FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Allow write for admin" ON campaigns FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Allow write for admin" ON sms_deliveries FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Allow write for admin" ON reservations FOR ALL TO authenticated USING (true) WITH CHECK (true);

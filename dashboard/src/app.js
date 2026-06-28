@@ -14,6 +14,9 @@ let pendingUploadCampaignId = null; // 💡 再ログイン自動再開用の保
 
 // キャッシュデータ
 let storesCache = [];
+let heatmapAccordionStates = {}; // エリアごとのアコーディオン開閉状態 (店舗別分析用, デフォルトは展開)
+let areasCache = []; // エリアデータキャッシュ ( { area_name, display_order } の配列 )
+let draggedArea = null; // ドラッグ＆ドロップ中のエリア名
 let campaignsCache = [];
 let smsDeliveriesCache = [];
 let reservationsCache = [];
@@ -596,6 +599,21 @@ async function loadInitialData(skipDeliveries = false) {
         // 💡 ブラウザが file:// や localhost 環境で API レスポンスを強制キャッシュし、
         // データの不整合を起こすのを防ぐため、全クエリに動的UUIDによるキャッシュ破壊フィルタを適用
         
+        // エリアマスタのロード
+        let loadedAreas = [];
+        if (supabaseClient) {
+            const { data: dbAreas, error: errArea } = await supabaseClient
+                .from('areas')
+                .select('*')
+                .order('display_order', { ascending: true });
+            if (!errArea) {
+                loadedAreas = dbAreas || [];
+            } else {
+                console.error("Failed to load areas:", errArea);
+            }
+        }
+        areasCache = loadedAreas;
+
         // 店舗マスタのロード
         const { data: stores, error: err1 } = await supabaseClient
             .from('stores')
@@ -604,6 +622,8 @@ async function loadInitialData(skipDeliveries = false) {
             .order('display_order', { ascending: true });
         if (err1) throw err1;
         storesCache = stores;
+        syncAreasCacheWithStores();
+        sortCacheByAreaAndOrder();
 
         // 配信キャンペーンのロード
         const { data: campaigns, error: errCamp } = await supabaseClient
@@ -1413,79 +1433,128 @@ function renderStoreHeatmap(stores, deliveries, reservations, storeSms, isIdMatc
     const tableBody = document.querySelector('#store-heatmap-table tbody');
     tableBody.innerHTML = '';
 
+    if (stores.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">対象店舗がありません。</td></tr>';
+        return;
+    }
+
+    // 1. エリアごとにグループ化
+    const groups = {};
     stores.forEach(store => {
-        const sDeliveries = deliveries.filter(d => d.store_code === store.store_code);
-        const sReservations = reservations.filter(r => r.store_code === store.store_code);
-        const sStoreSms = storeSms.filter(s => s.store_code === store.store_code);
+        const area = store.area_name || ""; // 空文字は未分類
+        if (!groups[area]) groups[area] = [];
+        groups[area].push(store);
+    });
 
-        let smsSent = sDeliveries.length; // 送信宛先数(顧客数)
-        let ownSms = sStoreSms.reduce((sum, s) => sum + s.sms_count, 0);
+    // 2. エリアキーのソート (未分類を最初、その他は areasCache の表示順)
+    const areaKeys = Object.keys(groups).sort((a, b) => {
+        if (a === "") return -1;
+        if (b === "") return 1;
+        const idxA = areasCache.findIndex(ar => ar.area_name === a);
+        const idxB = areasCache.findIndex(ar => ar.area_name === b);
+        const orderA = idxA !== -1 ? idxA : 9999;
+        const orderB = idxB !== -1 ? idxB : 9999;
+        return orderA - orderB;
+    });
 
-        let smsRes = 0;
-        let lineRes = 0;
-        let emoRes = 0;
+    // 3. レンダリング
+    areaKeys.forEach(area => {
+        const storesInArea = groups[area];
 
-        if (isIdMatchMode) {
-            // ID突合
-            const deliveryHashes = new Set(sDeliveries.map(d => d.hashed_customer_id));
-            const matchedRes = sReservations.filter(res => {
-                const isHashMatch = deliveryHashes.has(res.hashed_customer_id);
-                
-                let isCatMatch = filterCategory === 'all';
-                if (!isCatMatch && res.work_group) {
-                    if (filterCategory === 'コーティング') {
-                        isCatMatch = res.work_group.includes('コーティング') || res.work_group.includes('洗車');
-                    } else {
-                        isCatMatch = res.work_group.includes(filterCategory);
-                    }
-                }
-                return isHashMatch && isCatMatch;
-            });
-            
-            smsRes = matchedRes.filter(r => r.route === 'SMS予約').length;
-            lineRes = matchedRes.filter(r => r.route === 'LINE予約').length;
-            emoRes = matchedRes.filter(r => r.route_store === 'EMO_WEB').length;
-        } else {
-            // 単純カウント
-            const targetRes = sReservations.filter(res => {
-                let matchesFilter = filterCategory === 'all';
-                if (!matchesFilter && res.work_group) {
-                    if (filterCategory === 'コーティング') {
-                        matchesFilter = res.work_group.includes('コーティング') || res.work_group.includes('洗車');
-                    } else {
-                        matchesFilter = res.work_group.includes(filterCategory);
-                    }
-                }
-                return matchesFilter;
-            });
-
-            smsRes = targetRes.filter(r => r.route === 'SMS予約').length;
-            lineRes = targetRes.filter(r => r.route === 'LINE予約').length;
-            emoRes = targetRes.filter(r => r.route_store === 'EMO_WEB').length;
+        // アコーディオン開閉状態 (デフォルトはすべて展開: true)
+        if (heatmapAccordionStates[area] === undefined) {
+            heatmapAccordionStates[area] = true;
         }
 
-        const totalRes = smsRes + lineRes + emoRes;
-        const totalSent = smsSent + ownSms;
-        const rateVal = totalSent > 0 ? (totalRes / totalSent * 100) : 0;
+        const isCollapsed = !heatmapAccordionStates[area];
+        const displayStyle = isCollapsed ? 'none' : 'table-row';
+        const collapsedClass = isCollapsed ? 'collapsed' : '';
 
-        // ヒートマップレベルの判定
-        let hmClass = 'hm-level-0';
-        if (rateVal >= 4.0) hmClass = 'hm-level-3';
-        else if (rateVal >= 2.5) hmClass = 'hm-level-2';
-        else if (rateVal >= 1.0) hmClass = 'hm-level-1';
-
+        // エリアヘッダー行を追加
         tableBody.innerHTML += `
-            <tr>
-                <td style="font-weight: 600;">${store.store_name}</td>
-                <td><span style="color: var(--text-muted); font-size: 12px;">${store.area_name}</span></td>
-                <td>${smsSent.toLocaleString()}</td>
-                <td>${ownSms.toLocaleString()}</td>
-                <td>${smsRes}</td>
-                <td>${lineRes}</td>
-                <td>${emoRes}</td>
-                <td class="hm-cell ${hmClass}">${rateVal.toFixed(2)} %</td>
+            <tr class="area-header-row area-heatmap-header-row ${collapsedClass}" data-area="${area}" onclick="toggleHeatmapAreaAccordion('${area}')">
+                <td colspan="8">
+                    <span class="accordion-toggle-icon">▼</span>
+                    <span class="area-name-text">📍 ${area || '未分類'}</span>
+                    <span class="area-store-count">(${storesInArea.length}店舗)</span>
+                </td>
             </tr>
         `;
+
+        storesInArea.forEach(store => {
+            const sDeliveries = deliveries.filter(d => d.store_code === store.store_code);
+            const sReservations = reservations.filter(r => r.store_code === store.store_code);
+            const sStoreSms = storeSms.filter(s => s.store_code === store.store_code);
+
+            let smsSent = sDeliveries.length; // 送信宛先数(顧客数)
+            let ownSms = sStoreSms.reduce((sum, s) => sum + s.sms_count, 0);
+
+            let smsRes = 0;
+            let lineRes = 0;
+            let emoRes = 0;
+
+            if (isIdMatchMode) {
+                // ID突合
+                const deliveryHashes = new Set(sDeliveries.map(d => d.hashed_customer_id));
+                const matchedRes = sReservations.filter(res => {
+                    const isHashMatch = deliveryHashes.has(res.hashed_customer_id);
+                    
+                    let isCatMatch = filterCategory === 'all';
+                    if (!isCatMatch && res.work_group) {
+                        if (filterCategory === 'コーティング') {
+                            isCatMatch = res.work_group.includes('コーティング') || res.work_group.includes('洗車');
+                        } else {
+                            isCatMatch = res.work_group.includes(filterCategory);
+                        }
+                    }
+                    return isHashMatch && isCatMatch;
+                });
+                
+                smsRes = matchedRes.filter(r => r.route === 'SMS予約').length;
+                lineRes = matchedRes.filter(r => r.route === 'LINE予約').length;
+                emoRes = matchedRes.filter(r => r.route_store === 'EMO_WEB').length;
+            } else {
+                // 単純カウント
+                const targetRes = sReservations.filter(res => {
+                    let matchesFilter = filterCategory === 'all';
+                    if (!matchesFilter && res.work_group) {
+                        if (filterCategory === 'コーティング') {
+                            matchesFilter = res.work_group.includes('コーティング') || res.work_group.includes('洗車');
+                        } else {
+                            matchesFilter = res.work_group.includes(filterCategory);
+                        }
+                    }
+                    return matchesFilter;
+                });
+
+                smsRes = targetRes.filter(r => r.route === 'SMS予約').length;
+                lineRes = targetRes.filter(r => r.route === 'LINE予約').length;
+                emoRes = targetRes.filter(r => r.route_store === 'EMO_WEB').length;
+            }
+
+            const totalRes = smsRes + lineRes + emoRes;
+            const totalSent = smsSent + ownSms;
+            const rateVal = totalSent > 0 ? (totalRes / totalSent * 100) : 0;
+
+            // ヒートマップレベルの判定
+            let hmClass = 'hm-level-0';
+            if (rateVal >= 4.0) hmClass = 'hm-level-3';
+            else if (rateVal >= 2.5) hmClass = 'hm-level-2';
+            else if (rateVal >= 1.0) hmClass = 'hm-level-1';
+
+            tableBody.innerHTML += `
+                <tr class="store-heatmap-row" data-area="${area}" style="display: ${displayStyle};">
+                    <td style="font-weight: 600;">${store.store_name}</td>
+                    <td><span style="color: var(--text-muted); font-size: 12px;">${store.area_name}</span></td>
+                    <td>${smsSent.toLocaleString()}</td>
+                    <td>${ownSms.toLocaleString()}</td>
+                    <td>${smsRes}</td>
+                    <td>${lineRes}</td>
+                    <td>${emoRes}</td>
+                    <td class="hm-cell ${hmClass}">${rateVal.toFixed(2)} %</td>
+                </tr>
+            `;
+        });
     });
 }
 
@@ -2739,6 +2808,27 @@ async function deleteAllReservations() {
 let accordionStates = {}; // エリアごとのアコーディオン開閉状態 (エリア名 => boolean, デフォルトはfalse=閉じ)
 let draggedRowIdx = null;
 
+function syncAreasCacheWithStores() {
+    const uniqueAreas = [...new Set(storesCache.map(s => s.area_name).filter(a => a && a.trim() !== ""))];
+    
+    uniqueAreas.forEach(areaName => {
+        const exists = areasCache.some(ar => ar.area_name === areaName);
+        if (!exists) {
+            const maxOrder = areasCache.reduce((max, ar) => Math.max(max, ar.display_order || 0), 0);
+            areasCache.push({
+                area_name: areaName,
+                display_order: maxOrder + 10
+            });
+        }
+    });
+
+    areasCache = areasCache.filter(ar => ar.area_name === "不明" || uniqueAreas.includes(ar.area_name));
+    areasCache.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+    areasCache.forEach((ar, i) => {
+        ar.display_order = (i + 1) * 10;
+    });
+}
+
 // キャッシュをエリア順 ＆ 表示順で並び替えて連番を再設定する
 function sortCacheByAreaAndOrder() {
     storesCache.sort((a, b) => {
@@ -2753,7 +2843,12 @@ function sortCacheByAreaAndOrder() {
         if (areaA === "") return -1;
         if (areaB === "") return 1;
         
-        return areaA.localeCompare(areaB, 'ja');
+        const idxA = areasCache.findIndex(ar => ar.area_name === areaA);
+        const idxB = areasCache.findIndex(ar => ar.area_name === areaB);
+        const orderA = idxA !== -1 ? idxA : 9999;
+        const orderB = idxB !== -1 ? idxB : 9999;
+        
+        return orderA - orderB;
     });
     reassignDisplayOrders();
 }
@@ -2782,6 +2877,24 @@ function toggleAreaAccordion(area) {
 }
 window.toggleAreaAccordion = toggleAreaAccordion;
 
+function toggleHeatmapAreaAccordion(area) {
+    const headerRow = document.querySelector(`.area-heatmap-header-row[data-area="${area}"]`);
+    const storeRows = document.querySelectorAll(`.store-heatmap-row[data-area="${area}"]`);
+    if (!headerRow) return;
+
+    const isCollapsed = headerRow.classList.contains('collapsed');
+    if (isCollapsed) {
+        headerRow.classList.remove('collapsed');
+        storeRows.forEach(row => row.style.display = 'table-row');
+        heatmapAccordionStates[area] = true;
+    } else {
+        headerRow.classList.add('collapsed');
+        storeRows.forEach(row => row.style.display = 'none');
+        heatmapAccordionStates[area] = false;
+    }
+}
+window.toggleHeatmapAreaAccordion = toggleHeatmapAreaAccordion;
+
 // エリア名のテキストが変更（確定）されたときのハンドラ
 function handleStoreAreaTextChange(inputEl, storeIdx) {
     const newArea = inputEl.value.trim();
@@ -2806,12 +2919,14 @@ function setupStoresDragAndDrop() {
     const rows = tbody.querySelectorAll('.store-master-row');
     const headers = tbody.querySelectorAll('.area-header-row');
 
+    // 1. 店舗行のドラッグ
     rows.forEach(row => {
         row.addEventListener('dragstart', (e) => {
             draggedRowIdx = parseInt(row.dataset.idx);
+            draggedArea = null;
             row.classList.add('dragging');
             e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/plain', draggedRowIdx);
+            e.dataTransfer.setData('text/plain', 'store:' + draggedRowIdx);
         });
 
         row.addEventListener('dragend', () => {
@@ -2822,13 +2937,14 @@ function setupStoresDragAndDrop() {
 
         row.addEventListener('dragover', (e) => {
             e.preventDefault();
+            if (draggedArea !== null) return;
+
             const draggingRow = tbody.querySelector('.dragging');
             if (!draggingRow || draggingRow === row) return;
 
             const rect = row.getBoundingClientRect();
             const midpoint = rect.top + rect.height / 2;
             
-            // スタイルクリア
             tbody.querySelectorAll('.store-master-row').forEach(r => {
                 if (r !== row) r.classList.remove('drag-over-above', 'drag-over-below');
             });
@@ -2844,6 +2960,8 @@ function setupStoresDragAndDrop() {
 
         row.addEventListener('drop', (e) => {
             e.preventDefault();
+            if (draggedArea !== null) return;
+
             const targetIdx = parseInt(row.dataset.idx);
             const targetArea = row.dataset.area;
 
@@ -2855,27 +2973,66 @@ function setupStoresDragAndDrop() {
         });
     });
 
+    // 2. エリアヘッダーのドラッグ
     headers.forEach(header => {
+        header.addEventListener('dragstart', (e) => {
+            draggedArea = header.dataset.area;
+            draggedRowIdx = null;
+            header.classList.add('dragging-area');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', 'area:' + draggedArea);
+            
+            // ドラッグ中のエリアに属する店舗行を一時的に非表示にする
+            const storeRows = tbody.querySelectorAll(`.store-master-row[data-area="${draggedArea}"]`);
+            storeRows.forEach(row => row.style.display = 'none');
+        });
+
+        header.addEventListener('dragend', () => {
+            header.classList.remove('dragging-area');
+            removeDragOverStyles();
+            draggedArea = null;
+        });
+
         header.addEventListener('dragover', (e) => {
             e.preventDefault();
-            const draggingRow = tbody.querySelector('.dragging');
-            if (!draggingRow) return;
+            
+            if (draggedArea !== null) {
+                if (draggedArea === header.dataset.area) return;
 
-            header.classList.add('drag-over');
+                const rect = header.getBoundingClientRect();
+                const midpoint = rect.top + rect.height / 2;
+
+                tbody.querySelectorAll('.area-header-row').forEach(h => {
+                    if (h !== header) h.classList.remove('drag-over-above', 'drag-over-below');
+                });
+
+                if (e.clientY < midpoint) {
+                    header.classList.add('drag-over-above');
+                    header.classList.remove('drag-over-below');
+                } else {
+                    header.classList.add('drag-over-below');
+                    header.classList.remove('drag-over-above');
+                }
+            } else if (draggedRowIdx !== null) {
+                header.classList.add('drag-over');
+            }
         });
 
         header.addEventListener('dragleave', () => {
-            header.classList.remove('drag-over');
+            header.classList.remove('drag-over', 'drag-over-above', 'drag-over-below');
         });
 
         header.addEventListener('drop', (e) => {
             e.preventDefault();
             const targetArea = header.dataset.area;
 
-            if (draggedRowIdx !== null) {
+            if (draggedArea !== null && draggedArea !== targetArea) {
+                const isAbove = header.classList.contains('drag-over-above');
+                moveAreaInCache(draggedArea, targetArea, isAbove);
+            } else if (draggedRowIdx !== null) {
                 moveStoreToAreaStart(draggedRowIdx, targetArea);
             }
-            header.classList.remove('drag-over');
+            removeDragOverStyles();
         });
     });
 }
@@ -2887,9 +3044,38 @@ function removeDragOverStyles() {
         r.classList.remove('drag-over-above', 'drag-over-below');
     });
     tbody.querySelectorAll('.area-header-row').forEach(h => {
-        h.classList.remove('drag-over');
+        h.classList.remove('drag-over', 'drag-over-above', 'drag-over-below');
     });
 }
+
+function moveAreaInCache(draggedAreaName, targetAreaName, isAbove) {
+    if (draggedAreaName === "" || targetAreaName === "") return; // 未分類はドラッグさせない
+
+    const draggedIdx = areasCache.findIndex(ar => ar.area_name === draggedAreaName);
+    const targetIdx = areasCache.findIndex(ar => ar.area_name === targetAreaName);
+    if (draggedIdx === -1 || targetIdx === -1) return;
+
+    const draggedAreaObj = areasCache[draggedIdx];
+    areasCache.splice(draggedIdx, 1);
+
+    let newTargetIdx = areasCache.findIndex(ar => ar.area_name === targetAreaName);
+    if (newTargetIdx === -1) {
+        newTargetIdx = targetIdx > draggedIdx ? targetIdx - 1 : targetIdx;
+    }
+
+    const insertIdx = isAbove ? newTargetIdx : newTargetIdx + 1;
+    areasCache.splice(insertIdx, 0, draggedAreaObj);
+
+    areasCache.forEach((ar, i) => {
+        ar.display_order = (i + 1) * 10;
+    });
+
+    sortCacheByAreaAndOrder();
+    loadStoresMaster();
+}
+window.moveAreaInCache = moveAreaInCache;
+window.syncAreasCacheWithStores = syncAreasCacheWithStores;
+window.sortCacheByAreaAndOrder = sortCacheByAreaAndOrder;
 
 function moveStoreInCache(draggedIdx, targetIdx, isAbove, targetArea) {
     const draggedStore = storesCache[draggedIdx];
@@ -2961,11 +3147,15 @@ async function loadStoresMaster() {
         groups[area].push({ store, originalIdx: idx });
     });
 
-    // 2. エリアキーのソート (未分類を最初、その他は五十音順)
+    // 2. エリアキーのソート (未分類を最初、その他は areasCache の表示順)
     const areaKeys = Object.keys(groups).sort((a, b) => {
         if (a === "") return -1;
         if (b === "") return 1;
-        return a.localeCompare(b, 'ja');
+        const idxA = areasCache.findIndex(ar => ar.area_name === a);
+        const idxB = areasCache.findIndex(ar => ar.area_name === b);
+        const orderA = idxA !== -1 ? idxA : 9999;
+        const orderB = idxB !== -1 ? idxB : 9999;
+        return orderA - orderB;
     });
 
     // 3. アコーディオン構造でレンダリング
@@ -2983,7 +3173,7 @@ async function loadStoresMaster() {
 
         // エリアヘッダー行を追加
         tbody.innerHTML += `
-            <tr class="area-header-row ${collapsedClass}" data-area="${area}" onclick="toggleAreaAccordion('${area}')">
+            <tr class="area-header-row ${collapsedClass}" data-area="${area}" draggable="true" onclick="toggleAreaAccordion('${area}')">
                 <td colspan="6">
                     <span class="accordion-toggle-icon">▼</span>
                     <span class="area-name-text">📍 ${area || '未分類'}</span>
@@ -3086,7 +3276,7 @@ async function saveStoresMaster() {
     if (!supabaseClient) {
         // デモモード用の一時保存
         storesCache = updates.map(u => ({ ...u, isNew: false }));
-        showToast("💾 店舗マスタを一時保存しました（デモ）。", "success");
+        showToast("💾 店舗マスタ・エリア順序を一時保存しました（デモ）。", "success");
         loadAllData();
         return;
     }
@@ -3102,15 +3292,28 @@ async function saveStoresMaster() {
         }
 
         // 2. 新しいデータ（変更後を含む）をupsert
-        const { error } = await supabaseClient.from('stores').upsert(updates);
-        if (error) throw error;
+        const { error: errStores } = await supabaseClient.from('stores').upsert(updates);
+        if (errStores) throw errStores;
 
-        showToast("💾 店舗マスタの変更を保存しました。", "success");
+        // 3. エリア順序をupsert
+        const areaUpdates = areasCache.map(ar => ({
+            area_name: ar.area_name,
+            display_order: ar.display_order
+        }));
+        if (areaUpdates.length > 0) {
+            const { error: errAreas } = await supabaseClient.from('areas').upsert(areaUpdates);
+            if (errAreas) {
+                console.error("Failed to save area orders:", errAreas);
+                showToast("⚠️ 店舗データは保存されましたが、エリア表示順の保存に失敗しました。", "warning");
+            }
+        }
+
+        showToast("💾 店舗マスタとエリア順序の変更を保存しました。", "success");
         await loadInitialData();
         loadStoresMaster();
     } catch (err) {
         console.error(err);
-        showToast("❌ 店舗マスタの保存に失敗しました。", "error");
+        showToast("❌ 保存に失敗しました。", "error");
     }
 }
 
