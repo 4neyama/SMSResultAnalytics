@@ -58,6 +58,65 @@ function setAggregationBase(base) {
     loadAllData();
 }
 
+let importLogsCache = [];
+
+async function loadImportLogs() {
+    if (!supabaseClient) {
+        renderImportLogs();
+        return;
+    }
+
+    try {
+        const { data, error } = await supabaseClient
+            .from('import_logs')
+            .select('*')
+            .eq('import_type', 'nyuko')
+            .order('imported_at', { ascending: false })
+            .limit(10);
+
+        if (error) throw error;
+        importLogsCache = data || [];
+        renderImportLogs();
+    } catch (err) {
+        console.error("❌ インポート履歴の取得失敗:", err);
+        const tbody = document.getElementById('import-log-body');
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--danger); padding: 8px;">履歴の読み込みに失敗しました。</td></tr>';
+        }
+    }
+}
+
+function renderImportLogs() {
+    const tbody = document.getElementById('import-log-body');
+    if (!tbody) return;
+
+    if (importLogsCache.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 8px;">履歴はありません。</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = '';
+    importLogsCache.forEach(log => {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid rgba(255, 255, 255, 0.05)';
+        
+        const dateStr = log.imported_at ? new Date(log.imported_at).toLocaleString('ja-JP', {
+            timeZone: 'Asia/Tokyo',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        }) : '-';
+
+        tr.innerHTML = `
+            <td style="padding: 6px 4px; color: var(--text-muted); white-space: nowrap;">${dateStr}</td>
+            <td style="padding: 6px 4px; color: var(--text-main); font-weight: 500; word-break: break-all;" title="${log.file_name || ''}">${log.file_name || '-'}</td>
+            <td style="padding: 6px 4px; color: var(--secondary); font-weight: 600; text-align: right; white-space: nowrap;">${(log.row_count || 0).toLocaleString()} 件</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
 // 💡 静的補完マッピング辞書（店舗名 -> SSコード）
 const MASTER_STORE_NAME_TO_SS_CODE = {
     "羽島": "8003022",
@@ -895,6 +954,7 @@ function switchTab(tabId) {
         renderCampaignGrid();
     } else if (tabId === 'reservation-manage-view') {
         loadReservationsList();
+        loadImportLogs();
     } else if (tabId === 'system-setting-view') {
         loadStoresMaster();
         renderMappingRules();
@@ -1400,7 +1460,7 @@ function handleImportTypeChange() {
 }
 
 // 行ごとのPII除去・不可逆ハッシュ化・バリデーション処理
-async function processAndUploadRows(rows, fieldnames, type, campaignId) {
+async function processAndUploadRows(rows, fieldnames, type, campaignId, fileName = null) {
     const log = (msg) => logToConsole(msg, type);
 
     // 💡 画面上のアップロードセルをローディング表示にする
@@ -1693,10 +1753,22 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
                 const newIds = validCleanRecords.map(r => r.reservation_id);
                 reservationsCache = reservationsCache.filter(r => !newIds.includes(r.reservation_id));
                 reservationsCache.push(...validCleanRecords);
+
+                if (fileName) {
+                    importLogsCache.unshift({
+                        id: 'demo-log-' + Math.random().toString(36).substr(2, 9),
+                        imported_at: new Date().toISOString(),
+                        file_name: fileName,
+                        row_count: validCleanRecords.length,
+                        import_type: 'nyuko',
+                        created_by: 'admin-demo'
+                    });
+                }
             }
             log("🎉 インポート成功（デモ）！ダッシュボードに反映されました。");
             showToast("📥 データを一時インポートしました（デモ）。", "success");
             renderCampaignGrid();
+            renderImportLogs();
             loadAllData();
             return;
         }
@@ -1786,7 +1858,26 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
             log("🔄 CSVインポート完了に伴い、グリッド設定を自動セーブしてデータベースへの永続化を確定しています...");
             await saveCampaignGrid(true);
         } else {
+            if (fileName) {
+                try {
+                    let userEmail = 'admin';
+                    const { data: { user } } = await supabaseClient.auth.getUser();
+                    if (user && user.email) {
+                        userEmail = user.email;
+                    }
+                    
+                    await supabaseClient.from('import_logs').insert([{
+                        file_name: fileName,
+                        row_count: insertedCount,
+                        import_type: 'nyuko',
+                        created_by: userEmail
+                    }]);
+                } catch (logErr) {
+                    console.error("Failed to write import log:", logErr);
+                }
+            }
             await loadReservationsList();
+            await loadImportLogs();
             loadAllData();
         }
     } catch (err) {
@@ -4274,7 +4365,7 @@ async function processGridFile(file, campaignId) {
                     const fieldnames = results.meta.fields;
                     logToConsole(`📊 CSVパース完了: ${rawRows.length} 件のレコードを検出しました。`);
                     
-                    await processAndUploadRows(rawRows, fieldnames, 'haishin', campaignId);
+                    await processAndUploadRows(rawRows, fieldnames, 'haishin', campaignId, file.name);
                 } catch (innerErr) {
                     console.error(innerErr);
                     logToConsole(`❌ CSVデータ処理中のエラー: ${innerErr.message || innerErr}`);
@@ -4355,7 +4446,7 @@ function startNyukoUpload() {
                 const fieldnames = results.meta.fields;
                 logToConsole(`📊 CSVパース完了: ${rawRows.length} 件の入庫予約レコードを検出しました。`);
                 
-                await processAndUploadRows(rawRows, fieldnames, 'nyuko', null);
+                await processAndUploadRows(rawRows, fieldnames, 'nyuko', null, selectedNyukoFile.name);
                 
                 // 完了後リセット
                 selectedNyukoFile = null;
@@ -4535,6 +4626,7 @@ window.handleSaveReservation = handleSaveReservation;
 window.deleteReservation = deleteReservation;
 window.deleteAllReservations = deleteAllReservations;
 window.setAggregationBase = setAggregationBase;
+window.renderImportLogs = renderImportLogs;
 
 // 💡 自動テスト検証用のグローバルエクスポート
 window.__appDebug = {
@@ -4546,9 +4638,12 @@ window.__appDebug = {
     set reservationsCache(val) { reservationsCache = val; },
     get reservationsListCache() { return reservationsListCache; },
     set reservationsListCache(val) { reservationsListCache = val; },
+    get importLogsCache() { return importLogsCache; },
+    set importLogsCache(val) { importLogsCache = val; },
     renderCampaignGrid: renderCampaignGrid,
     deleteCampaignDeliveries: deleteCampaignDeliveries,
     processGridFile: processGridFile,
-    saveCampaignGrid: saveCampaignGrid
+    saveCampaignGrid: saveCampaignGrid,
+    renderImportLogs: renderImportLogs
 };
 
