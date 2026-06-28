@@ -1292,7 +1292,7 @@ function loadAllData() {
     renderDeliveryTable(deliveryReportData);
 
     // 店舗ヒートマップの更新 (Tab 2 がアクティブの場合のみ、あるいは常に裏で更新)
-    renderStoreHeatmap(targetStoreCodes, joinedDeliveries, filteredReservations, filteredStoreSms, isIdMatchMode, category);
+    renderStoreHeatmap(targetStoreCodes, filteredDeliveries, filteredReservations, filteredStoreSms, isIdMatchMode, category);
 }
 
 // 7. 可視化・グラフィックス処理 (Chart.js / テーブル)
@@ -1461,6 +1461,77 @@ function renderStoreHeatmap(stores, deliveries, reservations, storeSms, isIdMatc
     areaKeys.forEach(area => {
         const storesInArea = groups[area];
 
+        // 各数値のエリア合計を計算
+        let areaSmsSentTotal = 0;
+        let areaOwnSmsTotal = 0;
+        let areaSmsResTotal = 0;
+        let areaLineResTotal = 0;
+        let areaEmoResTotal = 0;
+
+        storesInArea.forEach(store => {
+            const sDeliveries = deliveries.filter(d => d.store_code === store.store_code);
+            const sReservations = reservations.filter(r => r.store_code === store.store_code);
+            const sStoreSms = storeSms.filter(s => s.store_code === store.store_code);
+
+            let smsSent = sDeliveries.length;
+            let ownSms = sStoreSms.reduce((sum, s) => sum + s.sms_count, 0);
+
+            let smsRes = 0;
+            let lineRes = 0;
+            let emoRes = 0;
+
+            if (isIdMatchMode) {
+                const deliveryHashes = new Set(sDeliveries.map(d => d.hashed_customer_id));
+                const matchedRes = sReservations.filter(res => {
+                    const isHashMatch = deliveryHashes.has(res.hashed_customer_id);
+                    let isCatMatch = filterCategory === 'all';
+                    if (!isCatMatch && res.work_group) {
+                        if (filterCategory === 'コーティング') {
+                            isCatMatch = res.work_group.includes('コーティング') || res.work_group.includes('洗車');
+                        } else {
+                            isCatMatch = res.work_group.includes(filterCategory);
+                        }
+                    }
+                    return isHashMatch && isCatMatch;
+                });
+                
+                smsRes = matchedRes.filter(r => r.route === 'SMS予約').length;
+                lineRes = matchedRes.filter(r => r.route === 'LINE予約').length;
+                emoRes = matchedRes.filter(r => r.route_store === 'EMO_WEB').length;
+            } else {
+                const targetRes = sReservations.filter(res => {
+                    let matchesFilter = filterCategory === 'all';
+                    if (!matchesFilter && res.work_group) {
+                        if (filterCategory === 'コーティング') {
+                            matchesFilter = res.work_group.includes('コーティング') || res.work_group.includes('洗車');
+                        } else {
+                            matchesFilter = res.work_group.includes(filterCategory);
+                        }
+                    }
+                    return matchesFilter;
+                });
+
+                smsRes = targetRes.filter(r => r.route === 'SMS予約').length;
+                lineRes = targetRes.filter(r => r.route === 'LINE予約').length;
+                emoRes = targetRes.filter(r => r.route_store === 'EMO_WEB').length;
+            }
+
+            areaSmsSentTotal += smsSent;
+            areaOwnSmsTotal += ownSms;
+            areaSmsResTotal += smsRes;
+            areaLineResTotal += lineRes;
+            areaEmoResTotal += emoRes;
+        });
+
+        const areaTotalRes = areaSmsResTotal + areaLineResTotal + areaEmoResTotal;
+        const areaTotalSent = areaSmsSentTotal + areaOwnSmsTotal;
+        const areaRateVal = areaTotalSent > 0 ? (areaTotalRes / areaTotalSent * 100) : 0;
+
+        let areaHmClass = 'hm-level-0';
+        if (areaRateVal >= 4.0) areaHmClass = 'hm-level-3';
+        else if (areaRateVal >= 2.5) areaHmClass = 'hm-level-2';
+        else if (areaRateVal >= 1.0) areaHmClass = 'hm-level-1';
+
         // アコーディオン開閉状態 (デフォルトはすべて展開: true)
         if (heatmapAccordionStates[area] === undefined) {
             heatmapAccordionStates[area] = true;
@@ -1470,14 +1541,20 @@ function renderStoreHeatmap(stores, deliveries, reservations, storeSms, isIdMatc
         const displayStyle = isCollapsed ? 'none' : 'table-row';
         const collapsedClass = isCollapsed ? 'collapsed' : '';
 
-        // エリアヘッダー行を追加
+        // エリアヘッダー行を追加 (colspan="2"でラベル、残りはエリア合計値)
         tableBody.innerHTML += `
             <tr class="area-header-row area-heatmap-header-row ${collapsedClass}" data-area="${area}" onclick="toggleHeatmapAreaAccordion('${area}')">
-                <td colspan="8">
+                <td colspan="2" style="text-align: left; font-weight: 700;">
                     <span class="accordion-toggle-icon">▼</span>
                     <span class="area-name-text">📍 ${area || '未分類'}</span>
                     <span class="area-store-count">(${storesInArea.length}店舗)</span>
                 </td>
+                <td style="font-weight: 700; background: rgba(255, 255, 255, 0.05);">${areaSmsSentTotal.toLocaleString()}</td>
+                <td style="font-weight: 700; background: rgba(255, 255, 255, 0.05);">${areaOwnSmsTotal.toLocaleString()}</td>
+                <td style="font-weight: 700; background: rgba(255, 255, 255, 0.05);">${areaSmsResTotal.toLocaleString()}</td>
+                <td style="font-weight: 700; background: rgba(255, 255, 255, 0.05);">${areaLineResTotal.toLocaleString()}</td>
+                <td style="font-weight: 700; background: rgba(255, 255, 255, 0.05);">${areaEmoResTotal.toLocaleString()}</td>
+                <td class="hm-cell ${areaHmClass}" style="font-weight: 700; border: 1px solid rgba(255, 255, 255, 0.1);">${areaRateVal.toFixed(2)} %</td>
             </tr>
         `;
 
@@ -5043,6 +5120,10 @@ window.__appDebug = {
     set storesCache(val) { storesCache = val; },
     get reservationsCache() { return reservationsCache; },
     set reservationsCache(val) { reservationsCache = val; },
+    get smsDeliveriesCache() { return smsDeliveriesCache; },
+    set smsDeliveriesCache(val) { smsDeliveriesCache = val; },
+    get storeOwnSmsCache() { return storeOwnSmsCache; },
+    set storeOwnSmsCache(val) { storeOwnSmsCache = val; },
     get reservationsListCache() { return reservationsListCache; },
     set reservationsListCache(val) { reservationsListCache = val; },
     get importLogsCache() { return importLogsCache; },
