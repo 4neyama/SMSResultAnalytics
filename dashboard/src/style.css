@@ -947,3 +947,41 @@ select option {
     border-bottom: 2px solid var(--secondary) !important;
     background: rgba(16, 185, 129, 0.1) !important;
 }
+.area-header-row.drag-over-above td {
+    border-top: 3px solid var(--secondary) !important;
+}
+.area-header-row.drag-over-below td {
+    border-bottom: 3px solid var(--secondary) !important;
+}
+
+/* ドラッグ中要素のスタイル */
+.store-master-row.dragging {
+    opacity: 0.4;
+    background: rgba(59, 130, 246, 0.05) !important;
+}
+.area-header-row.dragging-area {
+    opacity: 0.4;
+    background: rgba(16, 185, 129, 0.05) !important;
+}
+
+/* エリアヘッダーのカーソルとドラッグハンドル */
+.area-header-row {
+    cursor: grab;
+    transition: background-color 0.2s ease;
+}
+.area-header-row:active {
+    cursor: grabbing;
+}
+.area-drag-handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    color: var(--text-muted);
+    opacity: 0.5;
+    transition: opacity 0.2s ease, color 0.2s ease;
+}
+.area-header-row:hover .area-drag-handle {
+    opacity: 1;
+    color: var(--secondary);
+}

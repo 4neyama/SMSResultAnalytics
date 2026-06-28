@@ -2860,6 +2860,7 @@ function reassignDisplayOrders() {
 }
 
 function toggleAreaAccordion(area) {
+    if (draggedArea !== null || draggedRowIdx !== null) return;
     const headerRow = document.querySelector(`.area-header-row[data-area="${area}"]`);
     const storeRows = document.querySelectorAll(`.store-master-row[data-area="${area}"]`);
     if (!headerRow) return;
@@ -3175,6 +3176,9 @@ async function loadStoresMaster() {
         tbody.innerHTML += `
             <tr class="area-header-row ${collapsedClass}" data-area="${area}" draggable="true" onclick="toggleAreaAccordion('${area}')">
                 <td colspan="6">
+                    <span class="area-drag-handle" onclick="event.stopPropagation()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-grip-vertical" style="vertical-align: middle; margin-right: 8px;"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+                    </span>
                     <span class="accordion-toggle-icon">▼</span>
                     <span class="area-name-text">📍 ${area || '未分類'}</span>
                     <span class="area-store-count">(${storesInArea.length}店舗)</span>
