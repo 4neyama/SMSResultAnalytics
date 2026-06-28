@@ -44,7 +44,10 @@ CREATE TABLE sms_deliveries (
     store_code VARCHAR(50) REFERENCES stores(store_code) ON DELETE CASCADE,
     hashed_customer_id VARCHAR(64) NOT NULL,   -- SHA-256で不可逆ハッシュ化した顧客IDまたは車台番号
     sms_count INTEGER DEFAULT 1 NOT NULL,      -- 通数
-    car_number VARCHAR(100),                   -- 車両ナンバー (新規追加)
+    car_land VARCHAR(50),                      -- ナンバー（陸事） (新規追加)
+    car_class VARCHAR(50),                     -- ナンバー（種別） (新規追加)
+    car_kana VARCHAR(50),                      -- ナンバー（かな） (新規追加)
+    car_num VARCHAR(50),                       -- ナンバー（車番） (新規追加)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 

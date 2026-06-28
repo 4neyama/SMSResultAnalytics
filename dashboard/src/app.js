@@ -1561,23 +1561,21 @@ async function processAndUploadRows(rows, fieldnames, type, campaignId) {
                     matchedStoreCode = "unknown";
                 }
 
-                // ナンバープレート情報（車両ナンバー）の抽出と結合
-                const carLand = (row["ナンバー（陸事）"] || "").trim();
-                const carClass = (row["ナンバー（種別）"] || "").trim();
-                const carKana = (row["ナンバー（かな）"] || "").trim();
-                const carNum = (row["ナンバー（車番）"] || "").trim();
-                
-                let carNumber = null;
-                if (carLand || carClass || carKana || carNum) {
-                    carNumber = `${carLand}${carClass}${carKana}${carNum}`;
-                }
+                // ナンバープレート情報の抽出
+                const carLand = (row["ナンバー（陸事）"] || "").trim() || null;
+                const carClass = (row["ナンバー（種別）"] || "").trim() || null;
+                const carKana = (row["ナンバー（かな）"] || "").trim() || null;
+                const carNum = (row["ナンバー（車番）"] || "").trim() || null;
 
                 return {
                     campaign_id: campaignId,
                     store_code: matchedStoreCode,
                     hashed_customer_id: newRow["hashed_customer_id"],
                     sms_count: parseInt(newRow["通数"]) || 1,
-                    car_number: carNumber
+                    car_land: carLand,
+                    car_class: carClass,
+                    car_kana: carKana,
+                    car_num: carNum
                 };
             } else {
                 const csvStoreName = newRow["予約受付店舗"] || "";

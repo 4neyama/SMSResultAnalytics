@@ -356,22 +356,21 @@ def process_csv_file(filepath, campaign_id, stores_list):
                 except ValueError:
                     pass
                     
-            # ナンバープレート情報（車両ナンバー）の抽出と結合
-            car_land = (row.get("ナンバー（陸事）") or "").strip()
-            car_class = (row.get("ナンバー（種別）") or "").strip()
-            car_kana = (row.get("ナンバー（かな）") or "").strip()
-            car_num = (row.get("ナンバー（車番）") or "").strip()
-            
-            car_number = None
-            if car_land or car_class or car_kana or car_num:
-                car_number = f"{car_land}{car_class}{car_kana}{car_num}"
+            # ナンバープレート情報の抽出
+            car_land = (row.get("ナンバー（陸事）") or "").strip() or None
+            car_class = (row.get("ナンバー（種別）") or "").strip() or None
+            car_kana = (row.get("ナンバー（かな）") or "").strip() or None
+            car_num = (row.get("ナンバー（車番）") or "").strip() or None
 
             records.append({
                 "campaign_id": campaign_id,
                 "store_code": matched_code,
                 "hashed_customer_id": hashed_id,
                 "sms_count": sms_count,
-                "car_number": car_number
+                "car_land": car_land,
+                "car_class": car_class,
+                "car_kana": car_kana,
+                "car_num": car_num
             })
             
     return records
