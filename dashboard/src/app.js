@@ -58,6 +58,47 @@ function setAggregationBase(base) {
     loadAllData();
 }
 
+let currentSummaryBase = 'booking_date';
+
+function setSummaryBase(base) {
+    if (currentSummaryBase === base) return;
+    currentSummaryBase = base;
+
+    const btnBooking = document.getElementById('toggle-summary-booking');
+    const btnVisit = document.getElementById('toggle-summary-visit');
+
+    if (btnBooking && btnVisit) {
+        if (base === 'booking_date') {
+            btnBooking.classList.add('active');
+            btnBooking.style.background = 'linear-gradient(135deg, #3b82f6, #2563eb)';
+            btnBooking.style.color = '#ffffff';
+            btnBooking.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
+            btnBooking.style.fontWeight = '600';
+
+            btnVisit.classList.remove('active');
+            btnVisit.style.background = 'transparent';
+            btnVisit.style.color = 'var(--text-muted)';
+            btnVisit.style.boxShadow = 'none';
+            btnVisit.style.fontWeight = '500';
+        } else {
+            btnVisit.classList.add('active');
+            btnVisit.style.background = 'linear-gradient(135deg, #3b82f6, #2563eb)';
+            btnVisit.style.color = '#ffffff';
+            btnVisit.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
+            btnVisit.style.fontWeight = '600';
+
+            btnBooking.classList.remove('active');
+            btnBooking.style.background = 'transparent';
+            btnBooking.style.color = 'var(--text-muted)';
+            btnBooking.style.boxShadow = 'none';
+            btnBooking.style.fontWeight = '500';
+        }
+    }
+
+    logToConsole(`🔄 月別サマリーの集計基準を「${base === 'booking_date' ? '予約受付日' : 'お客様来店日'}」に切り替えました。`, "nyuko");
+    updateMonthlySummary();
+}
+
 let importLogsCache = [];
 
 async function loadImportLogs() {
@@ -1922,8 +1963,11 @@ async function loadReservationsList() {
         const storeCode = document.getElementById('filter-res-store')?.value;
         const route = document.getElementById('filter-res-route')?.value;
         const rescheduledOnly = document.getElementById('filter-res-rescheduled-only')?.checked;
-
-        const dateColumn = currentAggregationBase; // 'booking_date' または 'visit_datetime'
+        
+        // サマリーバッジ選択による絞り込み時はサマリーの基準、それ以外（グローバル月指定等）はグローバルトグルの基準を使用
+        const activeBadge = document.querySelector('.monthly-summary-badge.active');
+        const isSummaryFiltered = activeBadge && startMonth && startMonth === endMonth;
+        const dateColumn = isSummaryFiltered ? currentSummaryBase : currentAggregationBase;
 
         // クエリの作成
         let query = supabaseClient
@@ -2009,7 +2053,7 @@ async function updateMonthlySummary() {
     const storeCode = document.getElementById('filter-res-store')?.value;
     const route = document.getElementById('filter-res-route')?.value;
     const rescheduledOnly = document.getElementById('filter-res-rescheduled-only')?.checked;
-    const dateField = currentAggregationBase; // 'booking_date' または 'visit_datetime'
+    const dateField = currentSummaryBase; // 'booking_date' または 'visit_datetime'
 
     let filtered = [];
 
@@ -4653,6 +4697,7 @@ window.handleSaveReservation = handleSaveReservation;
 window.deleteReservation = deleteReservation;
 window.deleteAllReservations = deleteAllReservations;
 window.setAggregationBase = setAggregationBase;
+window.setSummaryBase = setSummaryBase;
 window.renderImportLogs = renderImportLogs;
 
 // 💡 自動テスト検証用のグローバルエクスポート
@@ -4667,10 +4712,13 @@ window.__appDebug = {
     set reservationsListCache(val) { reservationsListCache = val; },
     get importLogsCache() { return importLogsCache; },
     set importLogsCache(val) { importLogsCache = val; },
+    get currentSummaryBase() { return currentSummaryBase; },
+    set currentSummaryBase(val) { currentSummaryBase = val; },
     renderCampaignGrid: renderCampaignGrid,
     deleteCampaignDeliveries: deleteCampaignDeliveries,
     processGridFile: processGridFile,
     saveCampaignGrid: saveCampaignGrid,
-    renderImportLogs: renderImportLogs
+    renderImportLogs: renderImportLogs,
+    setSummaryBase: setSummaryBase
 };
 
