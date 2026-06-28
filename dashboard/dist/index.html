@@ -516,16 +516,16 @@
                                 </div>
                                 <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 11px;" onclick="loadStoresMaster()">🔄 再読込</button>
                             </div>
-                            <div class="editable-grid-container" style="max-height: 380px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px;">
-                                <table style="font-size: 12px;">
+                            <div class="editable-grid-container" style="max-height: 380px; overflow: auto; border: 1px solid var(--border-color); border-radius: 8px;">
+                                <table style="font-size: 12px; table-layout: fixed; width: 100%; min-width: 820px;">
                                     <thead>
                                         <tr>
-                                            <th style="width: 40px; text-align: center;">並び</th>
-                                            <th style="width: 30px;"></th>
-                                            <th>店舗ID (store_code)</th>
-                                            <th>SSコード (ss_code)</th>
-                                            <th>SS店舗名</th>
-                                            <th>所属エリア名</th>
+                                            <th style="width: 50px; text-align: center; white-space: nowrap;">並び</th>
+                                            <th style="width: 20px;"></th>
+                                            <th style="width: 90px; white-space: nowrap;">店舗ID</th>
+                                            <th style="width: 110px; white-space: nowrap;">SSコード</th>
+                                            <th style="white-space: nowrap;">SS店舗名</th>
+                                            <th style="width: 130px; white-space: nowrap;">所属エリア名</th>
                                         </tr>
                                     </thead>
                                     <tbody id="stores-master-body">
