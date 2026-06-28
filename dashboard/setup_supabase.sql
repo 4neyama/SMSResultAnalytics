@@ -17,6 +17,7 @@ CREATE TABLE stores (
     ss_code VARCHAR(50),                      -- SSコード (7桁)
     store_name VARCHAR(100) NOT NULL,          -- 店舗名
     area_name VARCHAR(50) NOT NULL,            -- エリア名 (例: 中国1G)
+    display_order INTEGER DEFAULT 0,          -- 表示順 (新規追加)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 

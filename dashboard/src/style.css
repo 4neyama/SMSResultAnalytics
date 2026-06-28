@@ -864,3 +864,86 @@ select option {
     color: #ef4444 !important; /* ホバー時に赤色 */
     background: rgba(239, 68, 68, 0.15) !important;
 }
+
+/* 17. 店舗マスタ エリアアコーディオン ＆ ドラッグ＆ドロップ用スタイル */
+.area-header-row {
+    background: rgba(59, 130, 246, 0.1) !important;
+    font-weight: bold;
+    cursor: pointer;
+    user-select: none;
+    transition: var(--transition-smooth);
+}
+.area-header-row:hover {
+    background: rgba(59, 130, 246, 0.2) !important;
+}
+.area-header-row td {
+    padding: 10px 12px !important;
+    border-bottom: 1px solid rgba(59, 130, 246, 0.2) !important;
+}
+.accordion-toggle-icon {
+    display: inline-block;
+    transition: transform 0.2s ease;
+    margin-right: 6px;
+    font-size: 10px;
+    color: var(--primary);
+}
+.area-header-row.collapsed .accordion-toggle-icon {
+    transform: rotate(-90deg);
+}
+.area-name-text {
+    font-size: 12px;
+    color: var(--text-main);
+}
+.area-store-count {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: normal;
+    margin-left: 6px;
+}
+
+/* ドラッグ対象行のスタイル */
+.store-master-row {
+    transition: background-color 0.2s ease, opacity 0.2s ease;
+}
+.store-master-row.dragging {
+    opacity: 0.4;
+    background: rgba(30, 41, 59, 0.9) !important;
+}
+
+/* ドラッグハンドル列とアイコン */
+.drag-handle-cell {
+    text-align: center;
+    cursor: grab;
+    user-select: none;
+    color: var(--text-muted);
+    font-size: 14px;
+    transition: var(--transition-smooth);
+}
+.drag-handle-cell:hover {
+    color: var(--primary);
+}
+.store-master-row.dragging .drag-handle-cell {
+    cursor: grabbing;
+}
+
+/* ツリー接続線 L の表現 */
+.tree-indent-cell {
+    text-align: center;
+    color: rgba(255, 255, 255, 0.3);
+    font-family: monospace;
+    font-size: 12px;
+    user-select: none;
+    padding: 0 !important;
+}
+
+/* ドラッグオーバー時のインジケーター（境界線の強調） */
+.store-master-row.drag-over-above td {
+    border-top: 2px solid var(--primary) !important;
+}
+.store-master-row.drag-over-below td {
+    border-bottom: 2px solid var(--primary) !important;
+}
+.area-header-row.drag-over td {
+    border-bottom: 2px solid var(--secondary) !important;
+    background: rgba(16, 185, 129, 0.1) !important;
+}

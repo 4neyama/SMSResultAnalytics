@@ -464,7 +464,7 @@ async function loadInitialData(skipDeliveries = false) {
             .from('stores')
             .select('*')
             .neq('store_code', 'dummy_' + generateUUID())
-            .order('store_name');
+            .order('display_order', { ascending: true });
         if (err1) throw err1;
         storesCache = stores;
 
@@ -2319,35 +2319,299 @@ async function deleteAllReservations() {
 
 // 9. 店舗マスタ ＆ 店舗独自SMS of 編集UIの実装
 
+let accordionStates = {}; // エリアごとのアコーディオン開閉状態 (エリア名 => boolean, デフォルトはfalse=閉じ)
+let draggedRowIdx = null;
+
+// キャッシュをエリア順 ＆ 表示順で並び替えて連番を再設定する
+function sortCacheByAreaAndOrder() {
+    storesCache.sort((a, b) => {
+        const areaA = a.area_name || "";
+        const areaB = b.area_name || "";
+        
+        if (areaA === areaB) {
+            return (a.display_order || 0) - (b.display_order || 0);
+        }
+        
+        // 未分類（エリア空文字）を先頭にする
+        if (areaA === "") return -1;
+        if (areaB === "") return 1;
+        
+        return areaA.localeCompare(areaB, 'ja');
+    });
+    reassignDisplayOrders();
+}
+
+function reassignDisplayOrders() {
+    storesCache.forEach((store, i) => {
+        store.display_order = (i + 1) * 10;
+    });
+}
+
+function toggleAreaAccordion(area) {
+    const headerRow = document.querySelector(`.area-header-row[data-area="${area}"]`);
+    const storeRows = document.querySelectorAll(`.store-master-row[data-area="${area}"]`);
+    if (!headerRow) return;
+
+    const isCollapsed = headerRow.classList.contains('collapsed');
+    if (isCollapsed) {
+        headerRow.classList.remove('collapsed');
+        storeRows.forEach(row => row.style.display = 'table-row');
+        accordionStates[area] = true;
+    } else {
+        headerRow.classList.add('collapsed');
+        storeRows.forEach(row => row.style.display = 'none');
+        accordionStates[area] = false;
+    }
+}
+window.toggleAreaAccordion = toggleAreaAccordion;
+
+// エリア名のテキストが変更（確定）されたときのハンドラ
+function handleStoreAreaTextChange(inputEl, storeIdx) {
+    const newArea = inputEl.value.trim();
+    const store = storesCache[storeIdx];
+    if (!store) return;
+    if (store.area_name === newArea) return;
+
+    store.area_name = newArea;
+    accordionStates[newArea] = true; // 移動先のエリアを展開する
+    
+    // エリアが移動したのでソートして再描画
+    sortCacheByAreaAndOrder();
+    loadStoresMaster();
+}
+window.handleStoreAreaTextChange = handleStoreAreaTextChange;
+
+// ドラッグ＆ドロップイベントの設定
+function setupStoresDragAndDrop() {
+    const tbody = document.getElementById('stores-master-body');
+    if (!tbody) return;
+
+    const rows = tbody.querySelectorAll('.store-master-row');
+    const headers = tbody.querySelectorAll('.area-header-row');
+
+    rows.forEach(row => {
+        row.addEventListener('dragstart', (e) => {
+            draggedRowIdx = parseInt(row.dataset.idx);
+            row.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', draggedRowIdx);
+        });
+
+        row.addEventListener('dragend', () => {
+            row.classList.remove('dragging');
+            removeDragOverStyles();
+            draggedRowIdx = null;
+        });
+
+        row.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            const draggingRow = tbody.querySelector('.dragging');
+            if (!draggingRow || draggingRow === row) return;
+
+            const rect = row.getBoundingClientRect();
+            const midpoint = rect.top + rect.height / 2;
+            
+            // スタイルクリア
+            tbody.querySelectorAll('.store-master-row').forEach(r => {
+                if (r !== row) r.classList.remove('drag-over-above', 'drag-over-below');
+            });
+
+            if (e.clientY < midpoint) {
+                row.classList.add('drag-over-above');
+                row.classList.remove('drag-over-below');
+            } else {
+                row.classList.add('drag-over-below');
+                row.classList.remove('drag-over-above');
+            }
+        });
+
+        row.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const targetIdx = parseInt(row.dataset.idx);
+            const targetArea = row.dataset.area;
+
+            if (draggedRowIdx !== null && draggedRowIdx !== targetIdx) {
+                const isAbove = row.classList.contains('drag-over-above');
+                moveStoreInCache(draggedRowIdx, targetIdx, isAbove, targetArea);
+            }
+            removeDragOverStyles();
+        });
+    });
+
+    headers.forEach(header => {
+        header.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            const draggingRow = tbody.querySelector('.dragging');
+            if (!draggingRow) return;
+
+            header.classList.add('drag-over');
+        });
+
+        header.addEventListener('dragleave', () => {
+            header.classList.remove('drag-over');
+        });
+
+        header.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const targetArea = header.dataset.area;
+
+            if (draggedRowIdx !== null) {
+                moveStoreToAreaStart(draggedRowIdx, targetArea);
+            }
+            header.classList.remove('drag-over');
+        });
+    });
+}
+
+function removeDragOverStyles() {
+    const tbody = document.getElementById('stores-master-body');
+    if (!tbody) return;
+    tbody.querySelectorAll('.store-master-row').forEach(r => {
+        r.classList.remove('drag-over-above', 'drag-over-below');
+    });
+    tbody.querySelectorAll('.area-header-row').forEach(h => {
+        h.classList.remove('drag-over');
+    });
+}
+
+function moveStoreInCache(draggedIdx, targetIdx, isAbove, targetArea) {
+    const draggedStore = storesCache[draggedIdx];
+    if (!draggedStore) return;
+
+    // 所属エリアをドロップ先に自動更新
+    draggedStore.area_name = targetArea;
+
+    // キャッシュから取り出してターゲットの前後へ挿入
+    storesCache.splice(draggedIdx, 1);
+    
+    // 取り出し後のターゲットの物理インデックスを特定
+    let newTargetIdx = storesCache.findIndex((s, idx) => {
+        const origTargetIdx = targetIdx > draggedIdx ? targetIdx - 1 : targetIdx;
+        return idx === origTargetIdx;
+    });
+    if (newTargetIdx === -1) {
+        newTargetIdx = targetIdx > draggedIdx ? targetIdx - 1 : targetIdx;
+    }
+
+    const insertIdx = isAbove ? newTargetIdx : newTargetIdx + 1;
+    storesCache.splice(insertIdx, 0, draggedStore);
+
+    reassignDisplayOrders();
+    accordionStates[targetArea] = true; // 移動先を展開
+
+    // エリアがバラバラにならないように再ソート
+    sortCacheByAreaAndOrder();
+    loadStoresMaster();
+}
+
+function moveStoreToAreaStart(draggedIdx, targetArea) {
+    const draggedStore = storesCache[draggedIdx];
+    if (!draggedStore) return;
+
+    draggedStore.area_name = targetArea;
+    storesCache.splice(draggedIdx, 1);
+
+    const firstStoreIdx = storesCache.findIndex(s => s.area_name === targetArea);
+    if (firstStoreIdx === -1) {
+        storesCache.push(draggedStore);
+    } else {
+        storesCache.splice(firstStoreIdx, 0, draggedStore);
+    }
+
+    reassignDisplayOrders();
+    accordionStates[targetArea] = true;
+
+    sortCacheByAreaAndOrder();
+    loadStoresMaster();
+}
+
 async function loadStoresMaster() {
     const tbody = document.getElementById('stores-master-body');
+    if (!tbody) return;
+
     if (storesCache.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">店舗データがありません。左下のボタンから店舗を追加してください。</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">店舗データがありません。左下のボタンから店舗を追加してください。</td></tr>';
         return;
     }
 
     tbody.innerHTML = '';
+
+    // 1. エリアごとにグループ化
+    const groups = {};
     storesCache.forEach((store, idx) => {
+        const area = store.area_name || ""; // 空文字は未分類
+        if (!groups[area]) groups[area] = [];
+        groups[area].push({ store, originalIdx: idx });
+    });
+
+    // 2. エリアキーのソート (未分類を最初、その他は五十音順)
+    const areaKeys = Object.keys(groups).sort((a, b) => {
+        if (a === "") return -1;
+        if (b === "") return 1;
+        return a.localeCompare(b, 'ja');
+    });
+
+    // 3. アコーディオン構造でレンダリング
+    areaKeys.forEach(area => {
+        const storesInArea = groups[area];
+        
+        // アコーディオン開閉状態 (デフォルトは未分類のみ展開、他は折りたたみ)
+        if (accordionStates[area] === undefined) {
+            accordionStates[area] = (area === ""); // 未分類はデフォルト展開、他は折りたたみ
+        }
+        
+        const isCollapsed = !accordionStates[area];
+        const displayStyle = isCollapsed ? 'none' : 'table-row';
+        const collapsedClass = isCollapsed ? 'collapsed' : '';
+
+        // エリアヘッダー行を追加
         tbody.innerHTML += `
-            <tr class="store-master-row" data-idx="${idx}" data-original-code="${store.store_code || ''}">
-                <td><input type="text" class="store-code-input" value="${store.store_code || ''}" placeholder="店舗ID (例: 6921)" style="padding: 4px; font-size: 11px; width: 100%;"></td>
-                <td><input type="text" class="store-ss-code-input" value="${store.ss_code || ''}" placeholder="SSコード (例: 1016229)" style="padding: 4px; font-size: 11px; width: 100%;"></td>
-                <td><input type="text" class="store-name-input" value="${store.store_name || ''}" placeholder="店舗名" style="padding: 4px; font-size: 11px; width: 100%;"></td>
-                <td><input type="text" class="store-area-input" value="${store.area_name || ''}" placeholder="エリア名 (例: 中国1G)" style="padding: 4px; font-size: 11px; width: 100%;"></td>
+            <tr class="area-header-row ${collapsedClass}" data-area="${area}" onclick="toggleAreaAccordion('${area}')">
+                <td colspan="6">
+                    <span class="accordion-toggle-icon">▼</span>
+                    <span class="area-name-text">📍 ${area || '未分類'}</span>
+                    <span class="area-store-count">(${storesInArea.length}店舗)</span>
+                </td>
             </tr>
         `;
+
+        // 店舗行を追加
+        storesInArea.forEach(item => {
+            const store = item.store;
+            const idx = item.originalIdx;
+            
+            tbody.innerHTML += `
+                <tr class="store-master-row" data-idx="${idx}" data-area="${area}" data-original-code="${store.store_code || ''}" draggable="true" style="display: ${displayStyle};">
+                    <td class="drag-handle-cell">☰</td>
+                    <td class="tree-indent-cell">└</td>
+                    <td><input type="text" class="store-code-input" value="${store.store_code || ''}" placeholder="店舗ID (例: 6921)" style="padding: 4px; font-size: 11px; width: 100%;"></td>
+                    <td><input type="text" class="store-ss-code-input" value="${store.ss_code || ''}" placeholder="SSコード (例: 1016229)" style="padding: 4px; font-size: 11px; width: 100%;"></td>
+                    <td><input type="text" class="store-name-input" value="${store.store_name || ''}" placeholder="店舗名" style="padding: 4px; font-size: 11px; width: 100%;"></td>
+                    <td><input type="text" class="store-area-input" value="${store.area_name || ''}" placeholder="エリア名" onchange="handleStoreAreaTextChange(this, ${idx})" style="padding: 4px; font-size: 11px; width: 100%;"></td>
+                </tr>
+            `;
+        });
     });
+
+    // ドラッグ＆ドロップイベントの再バインド
+    setupStoresDragAndDrop();
 }
 
 // 店舗マスタに行を追加
 function addStoreMasterRow() {
+    const maxOrder = storesCache.reduce((max, s) => Math.max(max, s.display_order || 0), 0);
     storesCache.push({
         store_code: "",
         ss_code: "",
         store_name: "",
-        area_name: "",
+        area_name: "", // 最初は未分類
+        display_order: maxOrder + 10,
         isNew: true
     });
+    
+    // 未分類エリアのアコーディオンを展開する
+    accordionStates[""] = true;
+    
     loadStoresMaster();
 }
 
@@ -2357,6 +2621,7 @@ async function saveStoresMaster() {
     const updates = [];
     const deleteCodes = [];
     let hasError = false;
+    let index = 0;
 
     rows.forEach(row => {
         const codeInput = row.querySelector('.store-code-input');
@@ -2370,7 +2635,8 @@ async function saveStoresMaster() {
         const name = nameInput.value.trim();
         const area = areaInput.value.trim();
 
-        if (!code || !name || !area) {
+        // 店舗IDと店舗名は必須とする (エリア名は空＝未分類も許可)
+        if (!code || !name) {
             hasError = true;
             return;
         }
@@ -2379,8 +2645,10 @@ async function saveStoresMaster() {
             store_code: code,
             ss_code: ssCode || null,
             store_name: name,
-            area_name: area
+            area_name: area, // 空の場合は空文字列
+            display_order: (index + 1) * 10 // DOM上の物理的な並び順で連番を割り当てる
         });
+        index++;
 
         // 元のコードが存在し、新しく変更された場合は古いコードを削除対象にする
         if (originalCode && originalCode !== code) {
@@ -2389,7 +2657,7 @@ async function saveStoresMaster() {
     });
 
     if (hasError) {
-        showToast("❌ 店舗ID、店舗名、エリア名はすべて入力してください。", "error");
+        showToast("❌ 店舗ID、店舗名はすべて入力してください。", "error");
         return;
     }
 
