@@ -1164,7 +1164,7 @@ function loadAllData() {
 
                 const daySmsRes = matchedReservations.filter(r => r.route === 'SMS予約').length;
                 const dayLineRes = matchedReservations.filter(r => r.route === 'LINE予約').length;
-                const dayEmoRes = matchedReservations.filter(r => r.route_store === 'EMO_WEB').length;
+                const dayEmoRes = matchedReservations.filter(r => r.route === 'WEB予約').length;
 
                 // 全体集計へ加算
                 smsResCount += daySmsRes;
@@ -1210,7 +1210,7 @@ function loadAllData() {
             } else if (res.route === 'LINE予約') {
                 lineResCount++;
                 totalReservations++;
-            } else if (res.route_store === 'EMO_WEB') {
+            } else if (res.route === 'WEB予約') {
                 emoResCount++;
                 totalReservations++;
             }
@@ -1256,7 +1256,7 @@ function loadAllData() {
 
                 const daySmsRes = dayReservations.filter(r => r.route === 'SMS予約').length;
                 const dayLineRes = dayReservations.filter(r => r.route === 'LINE予約').length;
-                const dayEmoRes = dayReservations.filter(r => r.route_store === 'EMO_WEB').length;
+                const dayEmoRes = dayReservations.filter(r => r.route === 'WEB予約').length;
 
                 deliveryReportData.push({
                     delivery_date: delDate,
@@ -1497,7 +1497,7 @@ function renderStoreHeatmap(stores, deliveries, reservations, storeSms, isIdMatc
                 
                 smsRes = matchedRes.filter(r => r.route === 'SMS予約').length;
                 lineRes = matchedRes.filter(r => r.route === 'LINE予約').length;
-                emoRes = matchedRes.filter(r => r.route_store === 'EMO_WEB').length;
+                emoRes = matchedRes.filter(r => r.route === 'WEB予約').length;
             } else {
                 const targetRes = sReservations.filter(res => {
                     let matchesFilter = filterCategory === 'all';
@@ -1513,7 +1513,7 @@ function renderStoreHeatmap(stores, deliveries, reservations, storeSms, isIdMatc
 
                 smsRes = targetRes.filter(r => r.route === 'SMS予約').length;
                 lineRes = targetRes.filter(r => r.route === 'LINE予約').length;
-                emoRes = targetRes.filter(r => r.route_store === 'EMO_WEB').length;
+                emoRes = targetRes.filter(r => r.route === 'WEB予約').length;
             }
 
             areaSmsSentTotal += smsSent;
@@ -1596,7 +1596,7 @@ function renderStoreHeatmap(stores, deliveries, reservations, storeSms, isIdMatc
                 
                 smsRes = matchedRes.filter(r => r.route === 'SMS予約').length;
                 lineRes = matchedRes.filter(r => r.route === 'LINE予約').length;
-                emoRes = matchedRes.filter(r => r.route_store === 'EMO_WEB').length;
+                emoRes = matchedRes.filter(r => r.route === 'WEB予約').length;
             } else {
                 // 単純カウント
                 const targetRes = sReservations.filter(res => {
@@ -1613,7 +1613,7 @@ function renderStoreHeatmap(stores, deliveries, reservations, storeSms, isIdMatc
 
                 smsRes = targetRes.filter(r => r.route === 'SMS予約').length;
                 lineRes = targetRes.filter(r => r.route === 'LINE予約').length;
-                emoRes = targetRes.filter(r => r.route_store === 'EMO_WEB').length;
+                emoRes = targetRes.filter(r => r.route === 'WEB予約').length;
             }
 
             const totalRes = smsRes + lineRes + emoRes;
